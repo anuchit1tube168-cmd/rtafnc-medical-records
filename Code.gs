@@ -252,7 +252,11 @@ function initializeDefaultSettings(ss) {
     ["DEMO_ENABLED", "TRUE", "เปิดใช้งานโหมดทดลอง (TRUE/FALSE)"],
     ["SHOW_LOGO", "FALSE", "แสดงโลโก้บนหัวเอกสาร (TRUE/FALSE)"],
     ["PRINT_HEADER_TEXT", "บันทึกการเข้ารับบริการและส่งตัวสุขภาพ", "ข้อความส่วนหัวเอกสารรายงาน"],
-    ["PRINT_FOOTER_TEXT", "เอกสารนี้สร้างขึ้นโดยระบบเวชระเบียนอัตโนมัติประจำหน่วยงาน", "ข้อความท้ายเอกสารรายงาน"]
+    ["PRINT_FOOTER_TEXT", "เอกสารนี้สร้างขึ้นโดยระบบเวชระเบียนอัตโนมัติประจำหน่วยงาน", "ข้อความท้ายเอกสารรายงาน"],
+    ["TELEGRAM_BOT_TOKEN", "", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
+    ["TELEGRAM_CHAT_ID", "", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
+    ["GOOGLE_FORM_ID", "", "ไอดี Google Form รับคำตอบ (เก็บหลังบ้าน)"],
+    ["GOOGLE_SLIDES_TEMPLATE_ID", "", "ไอดี Google Slides สำหรับออกเอกสารตรวจรักษา (เก็บหลังบ้าน)"]
   ];
 
   // อ่านข้อมูลเดิมเพื่อไม่ให้บันทึกซ้ำ
@@ -3136,6 +3140,14 @@ function saveSettings(sessionToken, settingsMap) {
     // ป้องกันการสูญหาย หากคีย์ไม่มีให้แทรกบรรทัดเพิ่ม
     if (!found) {
       sheet.appendRow([key, sanitizedVal, "ตั้งค่าเพิ่มเติมผ่าน UI", timestamp, session.username]);
+    }
+
+    // ซิงค์ค่าความลับเข้า Script Properties หลังบ้านทันที
+    const secretKeys = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "GOOGLE_FORM_ID", "GOOGLE_SLIDES_TEMPLATE_ID", "SPREADSHEET_ID"];
+    if (secretKeys.indexOf(key) !== -1 && sanitizedVal) {
+      try {
+        PropertiesService.getScriptProperties().setProperty(key, sanitizedVal);
+      } catch (propErr) {}
     }
   }
   

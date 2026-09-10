@@ -3,26 +3,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Bai+Jamjuree:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Kanit:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 
 :root {
-  --primary: #0d9488;
-  --primary-dark: #0f766e;
-  --primary-light: #ccfbf1;
-  --secondary: #f0fdfa;
-  --text: #1f2937;
-  --text-light: #6b7280;
-  --border: #e5e7eb;
+  /* Air Force & Nursing Light Mission Control Palette */
+  --navy-rtaf: #082444;
+  --navy-surface: #0f325d;
+  --primary: #005696;
+  --primary-dark: #003e6d;
+  --primary-light: #e0f2fe;
+  --sky-blue: #0284c7;
+  --sky-light: #f0f9ff;
+  --accent-gold: #b45309;
+  --accent-gold-bright: #f59e0b;
+  --accent-gold-light: #fef3c7;
+  --nursing-mint: #059669;
+  --nursing-mint-light: #d1fae5;
+  --secondary: #f0f9ff;
+  --text: #1e293b;
+  --text-light: #64748b;
+  --text-muted: #94a3b8;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
   --bg: #f8fafc;
   --white: #ffffff;
   --danger: #ef4444;
   --danger-dark: #dc2626;
   --warning: #f59e0b;
   --success: #10b981;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --radius: 12px;
-  --radius-sm: 8px;
+  --shadow-sm: 0 1px 3px 0 rgb(8 36 68 / 0.05);
+  --shadow: 0 4px 16px -2px rgb(8 36 68 / 0.08), 0 2px 6px -1px rgb(8 36 68 / 0.04);
+  --shadow-md: 0 10px 25px -4px rgb(8 36 68 / 0.12), 0 4px 10px -2px rgb(8 36 68 / 0.06);
+  --radius: 18px;
+  --radius-sm: 10px;
+  --radius-pill: 9999px;
   --font-main: 'Kanit', 'Bai Jamjuree', sans-serif;
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
@@ -855,8 +868,380 @@ body {
   font-weight: 600;
 }
 
+/* ========================================================
+   LIGHT MISSION CONTROL — RTAFNC DESIGN SYSTEM ENHANCEMENT
+   ======================================================== */
+
+/* 1. Hero Mission Control Banner */
+.mission-hero-banner {
+  background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 65%, #e0f2fe 100%);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent-gold-bright);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mission-hero-banner::after {
+  content: "\f072";
+  font-family: "Font Awesome 6 Free", "Font Awesome 5 Free";
+  font-weight: 900;
+  position: absolute;
+  right: -25px;
+  bottom: -35px;
+  font-size: 8.5rem;
+  color: rgba(2, 132, 199, 0.04);
+  pointer-events: none;
+  transform: rotate(-15deg);
+}
+
+.mission-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.mission-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid #bae6fd;
+  border-radius: var(--radius-pill);
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.mission-hero-badge i {
+  color: var(--accent-gold-bright);
+}
+
+.mission-hero-title {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--navy-rtaf);
+  line-height: 1.3;
+  margin-top: 6px;
+}
+
+.mission-hero-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-light);
+  max-width: 680px;
+  margin-top: 4px;
+}
+
+.mission-hero-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 2. Mission Control Action Pills */
+.btn-mission-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: var(--white);
+  box-shadow: 0 4px 14px rgba(0, 86, 150, 0.25);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 10px 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition);
+}
+
+.btn-mission-primary:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(0, 86, 150, 0.35);
+  background: linear-gradient(135deg, var(--sky-blue) 0%, var(--primary) 100%);
+}
+
+.btn-mission-outline {
+  background: var(--white);
+  border: 1px solid var(--border);
+  color: var(--navy-rtaf);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 10px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-mission-outline:hover {
+  background: var(--sky-light);
+  border-color: var(--sky-blue);
+  color: var(--primary);
+}
+
+/* 3. Mission Status Badges */
+.mission-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.mission-badge-emergency {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.mission-badge-urgent {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.mission-badge-routine {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.mission-badge-verified {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.mission-badge-referral {
+  background-color: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #ddd6fe;
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: currentColor;
+  display: inline-block;
+  animation: pulse-dot-anim 1.6s infinite;
+}
+
+@keyframes pulse-dot-anim {
+  0% { transform: scale(0.95); opacity: 0.9; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+  100% { transform: scale(0.95); opacity: 0.9; }
+}
+
+/* 4. Care Pathway Timeline */
+.care-pathway-timeline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  padding: 16px 8px;
+  margin: 12px 0;
+}
+
+.care-pathway-timeline::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 30px;
+  right: 30px;
+  height: 3px;
+  background: #e2e8f0;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.pathway-step {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  background: var(--white);
+  padding: 0 8px;
+}
+
+.pathway-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  border: 2px solid #cbd5e1;
+  transition: var(--transition);
+}
+
+.pathway-step.active .pathway-icon {
+  background: var(--primary);
+  color: var(--white);
+  border-color: var(--accent-gold-bright);
+  box-shadow: 0 0 12px rgba(0, 86, 150, 0.3);
+}
+
+.pathway-step.completed .pathway-icon {
+  background: var(--nursing-mint);
+  color: var(--white);
+  border-color: var(--nursing-mint);
+}
+
+.pathway-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
+.pathway-step.active .pathway-label {
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+
+/* 5. Health Radar and Illness Categories */
+.health-radar-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 22px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.radar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
+}
+
+.radar-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy-rtaf);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.radar-progress-bar {
+  flex: 1;
+  height: 9px;
+  background: #f1f5f9;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.radar-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 6. Mobile Bottom Navigation (LIFF / Smartphones) */
+.mobile-bottom-nav {
+  display: none;
+}
+
 /* Responsive Styles */
 @media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -4px 16px rgba(8, 36, 68, 0.07);
+    z-index: 1000;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 6px;
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.7rem;
+    font-weight: 500;
+    flex: 1;
+    height: 100%;
+    min-height: 48px;
+    min-width: 48px;
+    gap: 3px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .mobile-nav-item i {
+    font-size: 1.15rem;
+    transition: var(--transition);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  .mobile-nav-item.active i {
+    color: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  .page-container {
+    padding-bottom: 80px; /* Space for bottom nav */
+  }
+
+  .mission-hero-banner {
+    padding: 18px 16px;
+  }
+
+  .mission-hero-title {
+    font-size: 1.25rem;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;

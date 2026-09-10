@@ -462,14 +462,28 @@ function applySettingsLabels() {
 /**
  * แสดงหน้าเพจและเรียกใช้ตัวดึงข้อมูล
  */
+function navigateTo(pageId) {
+  showPage(pageId);
+}
+
+function openNewReferralModal() {
+  navigateTo('referrals');
+}
+
 function showPage(pageId) {
   // ยกเลิกหน้าเก่า
   const oldActive = document.querySelector('.sidebar-link.active');
   if (oldActive) oldActive.classList.remove('active');
   
-  // ไฮไลต์หน้าใหม่
+  // ไฮไลต์หน้าใหม่ (Sidebar)
   const newActive = document.querySelector(`.sidebar-link[data-page="${pageId}"]`);
   if (newActive) newActive.classList.add('active');
+
+  // ไฮไลต์หน้าใหม่ (Mobile Bottom Nav)
+  const oldMobile = document.querySelector('.mobile-nav-item.active');
+  if (oldMobile) oldMobile.classList.remove('active');
+  const newMobile = document.querySelector(`.mobile-nav-item[data-mobile-page="${pageId}"]`);
+  if (newMobile) newMobile.classList.add('active');
   
   // ซ่อนแผงหน้าเดิมทั้งหมด
   const pages = document.querySelectorAll('.page-view');

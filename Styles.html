@@ -68,27 +68,42 @@ body {
   background: #94a3b8;
 }
 
-/* หน้าล็อกอิน */
+/* หน้าล็อกอิน (RTAFNC Mission Aesthetic) */
 .login-container {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 20px;
-  background: linear-gradient(135deg, #0f766e 0%, #115e59 50%, #134e4a 100%);
+  padding: 24px;
+  background: radial-gradient(circle at 10% 15%, rgba(224, 242, 254, 0.4) 0%, transparent 40%),
+              radial-gradient(circle at 90% 85%, rgba(254, 243, 199, 0.3) 0%, transparent 35%),
+              linear-gradient(135deg, #082444 0%, #005696 45%, #0284c7 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 26px 26px;
+  pointer-events: none;
 }
 
 .login-card {
   width: 100%;
-  max-width: 440px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  padding: 40px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
+  max-width: 450px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 36px 30px 28px;
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(8, 36, 68, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
   text-align: center;
   position: relative;
-  overflow: hidden;
+  z-index: 2;
+  border: 1px solid rgba(224, 242, 254, 0.8);
 }
 
 .login-card::before {
@@ -96,28 +111,160 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 6px;
-  background: linear-gradient(90deg, #14b8a6, #0d9488);
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #082444 0%, #005696 35%, #f59e0b 70%, #059669 100%);
+  border-radius: 24px 24px 0 0;
 }
 
-.login-logo {
-  font-size: 3rem;
-  color: var(--primary);
-  margin-bottom: 15px;
+.login-logo-container {
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  padding: 5px;
+  box-shadow: 0 8px 25px -4px rgba(0, 86, 150, 0.35),
+              0 0 0 3px #e0f2fe,
+              0 0 0 5px rgba(245, 158, 11, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.35s ease;
+}
+
+.login-logo-container:hover {
+  transform: scale(1.05) rotate(1.5deg);
+  box-shadow: 0 14px 30px -4px rgba(0, 86, 150, 0.45),
+              0 0 0 3px #bae6fd,
+              0 0 0 6px rgba(245, 158, 11, 0.55);
+}
+
+.login-rtafnc-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.login-badge-header {
+  margin-bottom: 8px;
+}
+
+.badge-rtaf {
+  background: #e0f2fe;
+  color: #005696;
+  border: 1px solid #bae6fd;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .login-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #0f172a;
-  margin-bottom: 5px;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #082444;
+  margin-bottom: 4px;
+  letter-spacing: -0.2px;
 }
 
 .login-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-light);
-  margin-bottom: 30px;
+  font-size: 0.83rem;
+  color: #64748b;
+  margin-bottom: 22px;
+  line-height: 1.45;
+}
+
+.login-quick-access-box {
+  margin-top: 18px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  text-align: left;
+}
+
+.quick-access-header {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #005696;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.quick-access-body {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.credential-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.cred-label {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.cred-code {
+  background: #e0f2fe;
+  color: #005696;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid #bae6fd;
+  transition: all 0.2s;
+}
+
+.cred-code:hover {
+  background: #005696;
+  color: #ffffff;
+}
+
+.btn-fill-creds {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #0284c7;
+  color: #005696;
+  font-weight: 600;
+  font-size: 0.8rem;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-main);
+}
+
+.btn-fill-creds:hover {
+  background: #e0f2fe;
+  border-color: #005696;
+  color: #003e6d;
+}
+
+.input-highlight {
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.4) !important;
+  border-color: #0284c7 !important;
+  transition: box-shadow 0.3s ease;
 }
 
 .form-group {
@@ -226,16 +373,16 @@ body {
   min-height: 100vh;
 }
 
-/* Sidebar */
+/* Sidebar (RTAFNC Air Force Blue) */
 .sidebar {
   width: 260px;
-  background-color: #1e293b;
+  background: linear-gradient(180deg, #082444 0%, #0c2e55 60%, #06192e 100%);
   color: #cbd5e1;
   display: flex;
   flex-direction: column;
   transition: var(--transition);
   z-index: 100;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 4px 0 15px rgba(8, 36, 68, 0.25);
   position: relative;
 }
 
@@ -244,32 +391,82 @@ body {
 }
 
 .sidebar-header {
-  height: 70px;
+  height: 74px;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  border-bottom: 1px solid #334155;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   gap: 12px;
   overflow: hidden;
 }
 
-.sidebar-logo {
-  font-size: 1.5rem;
-  color: #14b8a6;
+.sidebar-logo-wrapper {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+  background: #ffffff;
+  padding: 3px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 2px rgba(245, 158, 11, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+}
+
+.sidebar-rtafnc-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.sidebar-title-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: opacity 0.2s;
+}
+
+.sidebar-badge-mil {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  letter-spacing: 0.5px;
+  width: fit-content;
 }
 
 .sidebar-title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--white);
+  color: #f8fafc;
+  line-height: 1.2;
+  margin-top: 2px;
   white-space: nowrap;
-  transition: opacity 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sidebar.collapsed .sidebar-title {
+.sidebar-sub {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.sidebar.collapsed .sidebar-title-group {
   opacity: 0;
   pointer-events: none;
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center;
+  padding: 0;
 }
 
 .sidebar-menu {
@@ -320,8 +517,9 @@ body {
 }
 
 .sidebar-link.active {
-  background-color: var(--primary);
-  box-shadow: 0 4px 10px rgba(13, 148, 136, 0.25);
+  background: linear-gradient(90deg, #005696 0%, #0284c7 100%);
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+  border-left: 3px solid #f59e0b;
 }
 
 .sidebar-link.active i {
@@ -337,6 +535,39 @@ body {
 }
 
 /* Header */
+.header-logo-mini {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 50%;
+  background: #ffffff;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(8, 36, 68, 0.15), 0 0 0 2px #e0f2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.header-rtafnc-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.hero-mini-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #ffffff;
+  padding: 1px;
+  vertical-align: middle;
+  margin-right: 4px;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.5);
+}
+
 .main-header {
   height: 70px;
   background-color: var(--white);

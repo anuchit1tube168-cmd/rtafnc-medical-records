@@ -128,6 +128,9 @@ function initApp() {
   document.getElementById('loginForm').addEventListener('submit', handleLogin);
   document.getElementById('demoLoginBtn').addEventListener('click', handleDemoLogin);
   
+  // ซิงก์ตราสัญลักษณ์วิทยาลัยพยาบาลทหารอากาศ
+  syncCollegeLogos();
+
   // จัดการการเปิดหน้าเมนูต่างๆ
   setupNavigation();
   
@@ -141,6 +144,39 @@ function initApp() {
     document.getElementById('loginView').style.display = 'flex';
     document.getElementById('appView').style.display = 'none';
     hideLoading();
+  }
+}
+
+/**
+ * ฟังก์ชันช่วยกรอกชื่อผู้ใช้และรหัสผ่านเริ่มต้นอย่างรวดเร็ว
+ */
+function fillQuickCredentials(username, password) {
+  const userEl = document.getElementById('username');
+  const passEl = document.getElementById('password');
+  if (userEl && passEl) {
+    userEl.value = username || 'admin';
+    passEl.value = password || '1234';
+    userEl.classList.add('input-highlight');
+    passEl.classList.add('input-highlight');
+    setTimeout(function() {
+      userEl.classList.remove('input-highlight');
+      passEl.classList.remove('input-highlight');
+    }, 1200);
+    showToast('กรอกข้อมูลเข้าสู่ระบบเรียบร้อย (ชื่อผู้ใช้: ' + userEl.value + ')', 'info');
+  }
+}
+
+/**
+ * ซิงก์ตราสัญลักษณ์วิทยาลัยพยาบาลทหารอากาศไปยังทุกตำแหน่ง
+ */
+function syncCollegeLogos() {
+  const mainLogo = document.getElementById('loginLogoImg');
+  if (mainLogo && mainLogo.src) {
+    document.querySelectorAll('.rtafnc-logo-img').forEach(function(img) {
+      if (img !== mainLogo && (!img.src || img.src === window.location.href)) {
+        img.src = mainLogo.src;
+      }
+    });
   }
 }
 

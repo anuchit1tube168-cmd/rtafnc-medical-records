@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>ระบบเวชระเบียนและงานสุขภาพประจำหน่วยงาน</title>
+  <!-- เชื่อมโยง FontAwesome สำหรับไอคอนสวยงาม -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- โหลดสไตล์หลักจาก Styles.html -->
+  <?!= include('Styles'); ?>
+</head>
+<body>
+
+  <!-- ==========================================
+       1. โหลดข้อมูลหน้าทับ (Loading Overlay)
+       ========================================== -->
+  <div id="loadingOverlay" class="loading-overlay active">
+    <div class="spinner"></div>
+    <div id="loadingText" class="loading-text">กำลังโหลดและจัดเตรียมระบบ...</div>
+  </div>
+
+  <!-- ==========================================
+       2. แจ้งเตือนด่วน (Toast Container)
+       ========================================== -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ==========================================
+       3. ส่วนหน้าล็อกอิน (Login View)
+       ========================================== -->
+  <div id="loginView" class="login-container" style="display: none;">
+    <div class="login-card">
+      <div class="login-logo">
+        <i class="fas fa-heartbeat"></i>
+      </div>
+      <h1 class="login-title" id="loginTitleText">ระบบเวชระเบียนสุขภาพ</h1>
+      <p class="login-subtitle">ระบบเวชระเบียนและงานสุขภาพประจำหน่วยงาน</p>
+      
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label" for="username">ชื่อผู้ใช้งาน</label>
+          <input type="text" id="username" class="form-control" placeholder="ระบุชื่อผู้ใช้ของคุณ" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="password">รหัสผ่าน</label>
+          <input type="password" id="password" class="form-control" placeholder="ระบุรหัสผ่าน" required autocomplete="current-password">
+        </div>
+        
+        <button type="submit" id="loginSubmitBtn" class="btn btn-primary btn-block">
+          <i class="fas fa-sign-in-alt"></i> เข้าสู่ระบบ
+        </button>
+      </form>
+      
+      <!-- ปุ่มล็อกอินโหมดทดสอบ (แสดงผลเฉพาะเมื่อเปิด DEMO_ENABLED = TRUE) -->
+      <button type="button" id="demoLoginBtn" class="btn btn-block login-demo-btn" style="display: none;">
+        <i class="fas fa-flask"></i> ทดลองใช้งานระบบ
+      </button>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       4. ส่วนพื้นที่แอปพลิเคชันหลัก (App View)
+       ========================================== -->
+  <div id="appView" class="app-container" style="display: none;">
+    
+    <!-- เมนูบาร์ด้านซ้าย (Sidebar) -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <i class="fas fa-stethoscope sidebar-logo"></i>
+        <div class="sidebar-title" id="orgShortNameDisplay">เวชระเบียนสุขภาพ</div>
+      </div>
+      
+      <ul class="sidebar-menu">
+        <li class="sidebar-item" data-menu="dashboard">
+          <a href="#" class="sidebar-link active" data-page="dashboard">
+            <i class="fas fa-chart-line"></i><span>ภาพรวม</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="recipients">
+          <a href="#" class="sidebar-link" data-page="recipients">
+            <i class="fas fa-address-book"></i><span data-label-recipient>ทะเบียนผู้รับบริการ</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="visits">
+          <a href="#" class="sidebar-link" data-page="visits">
+            <i class="fas fa-notes-medical"></i><span>บันทึกการเข้ารับบริการ</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="medicines">
+          <a href="#" class="sidebar-link" data-page="medicines">
+            <i class="fas fa-pills"></i><span>คลังยาและเวชภัณฑ์</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="referrals">
+          <a href="#" class="sidebar-link" data-page="referrals">
+            <i class="fas fa-shipping-fast"></i><span>การส่งต่อ</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="followups">
+          <a href="#" class="sidebar-link" data-page="followups">
+            <i class="fas fa-history"></i><span>ติดตามอาการ</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="reports">
+          <a href="#" class="sidebar-link" data-page="reports">
+            <i class="fas fa-file-invoice-dollar"></i><span>รายงานและสถิติ</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="users">
+          <a href="#" class="sidebar-link" data-page="users">
+            <i class="fas fa-users-cog"></i><span>จัดการผู้ใช้งาน</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="logs">
+          <a href="#" class="sidebar-link" data-page="logs">
+            <i class="fas fa-clipboard-list"></i><span>ประวัติการแก้ไข</span>
+          </a>
+        </li>
+        <li class="sidebar-item" data-menu="settings">
+          <a href="#" class="sidebar-link" data-page="settings">
+            <i class="fas fa-cogs"></i><span>ตั้งค่าระบบ</span>
+          </a>
+        </li>
+      </ul>
+      
+      <!-- เมนูออกจากระบบด้านล่างสุด -->
+      <div style="padding: 15px 10px; border-top: 1px solid #334155;">
+        <a href="#" id="logoutLink" class="sidebar-link" style="color: #ef4444;">
+          <i class="fas fa-sign-out-alt"></i><span>ออกจากระบบ</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- พื้นที่แสดงผลข้อมูลเนื้อหาหลักด้านขวา -->
+    <main class="main-content">
+      
+      <!-- เฮดเดอร์ส่วนบน (Header Bar) -->
+      <header class="main-header">
+        <div class="header-left">
+          <button id="toggleSidebar" class="toggle-sidebar-btn d-none d-md-block">
+            <i class="fas fa-bars"></i>
+          </button>
+          <button id="mobileMenuToggle" class="toggle-sidebar-btn d-block d-md-none">
+            <i class="fas fa-bars"></i>
+          </button>
+          <div class="header-title-box">
+            <span class="header-org-name" id="orgNameDisplay">หน่วยงานเวชระเบียน</span>
+            <h2 class="header-sys-name" id="sysNameDisplay">ระบบจัดเก็บและบันทึกเวชระเบียน</h2>
+          </div>
+        </div>
+        
+        <div class="header-right">
+          <!-- ป้ายโชว์โหมดเดโมเด่นชัดเจน -->
+          <div id="demoBadgeHeader" class="demo-badge" style="display: none;">
+            <i class="fas fa-flask"></i> โหมดทดลองใช้งาน (Demo)
+          </div>
+          
+          <div class="user-profile">
+            <div class="profile-avatar" id="avatarInitial">A</div>
+            <div class="profile-info">
+              <span class="profile-name" id="userNameDisplay">Admin</span>
+              <span class="profile-role" id="userRoleDisplay">ผู้ดูแลระบบ</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- คอนเทนเนอร์รวมหน้าเพจแบบ Single Page Application -->
+      <div class="page-container">
+
+        <!-- ==========================================
+             4.1 หน้าจอแดชบอร์ด (Dashboard Page)
+             ========================================== -->
+        <div id="dashboardPage" class="page-view" style="display: block;">
+          <div class="dashboard-grid">
+            <!-- การ์ดตัวชี้วัดรายวัน/เดือน/ปี -->
+            <div class="stat-card">
+              <div class="stat-icon primary"><i class="fas fa-user-injured"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashTodayCount">0</span>
+                <span class="stat-label">รับบริการวันนี้</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon primary"><i class="fas fa-calendar-alt"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashMonthCount">0</span>
+                <span class="stat-label">รับบริการเดือนนี้</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon success">
+                <i class="fas fa-users" data-label-recipient></i>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashTotalRecipients">0</span>
+                <span class="stat-label" data-label-recipient>ผู้รับบริการทั้งหมด</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon warning"><i class="fas fa-bed"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashObsCount">0</span>
+                <span class="stat-label">พักสังเกตอาการ</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon success"><i class="fas fa-walking"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashReturnedCount">0</span>
+                <span class="stat-label">ติดต่อส่งกลับบ้าน</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon danger"><i class="fas fa-ambulance"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashRefCount">0</span>
+                <span class="stat-label">ส่งต่อไปโรงพยาบาล</span>
+              </div>
+            </div>
+            <div class="stat-card fol-module-only">
+              <div class="stat-icon secondary"><i class="fas fa-clock"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashFollowUpCount">0</span>
+                <span class="stat-label">ติดตามอาการสะสม</span>
+              </div>
+            </div>
+            <div class="stat-card med-module-only">
+              <div class="stat-icon danger"><i class="fas fa-exclamation-circle"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashLowStockCount">0</span>
+                <span class="stat-label">ยาใกล้หมดสต็อก</span>
+              </div>
+            </div>
+            <div class="stat-card med-module-only">
+              <div class="stat-icon warning"><i class="fas fa-hourglass-half"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashNearExpiryCount">0</span>
+                <span class="stat-label">ยาใกล้หมดอายุ</span>
+              </div>
+            </div>
+            <div class="stat-card med-module-only">
+              <div class="stat-icon danger"><i class="fas fa-calendar-times"></i></div>
+              <div class="stat-info">
+                <span class="stat-value" id="dashExpiredCount">0</span>
+                <span class="stat-label">ยาหมดอายุแล้ว</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ตารางผู้เข้าใช้บริการล่าสุดวันนี้ -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-history"></i> รายการผู้เข้ารับบริการ 5 รายล่าสุดวันนี้</h3>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>เลขประวัติ</th>
+                      <th data-label-recipient>ชื่อผู้รับบริการ</th>
+                      <th data-label-group>กลุ่ม/แผนก</th>
+                      <th>อาการสำคัญ</th>
+                      <th>เวลาเข้า</th>
+                      <th>ผลหลังการดูแล</th>
+                      <th>ผู้บันทึก</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashRecentVisitsBody">
+                    <tr>
+                      <td colspan="7" class="text-center">กำลังค้นหาข้อมูลการบริการล่าช้า...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.2 ทะเบียนข้อมูลผู้รับบริการ (Recipients Page)
+             ========================================== -->
+        <div id="recipientsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title" data-label-recipient><i class="fas fa-address-card"></i> ทะเบียนผู้รับบริการสุขภาพ</h3>
+              <button class="btn btn-primary" onclick="openNewRecipientModal()">
+                <i class="fas fa-user-plus"></i> <span data-label-recipient>เพิ่มผู้รับบริการใหม่</span>
+              </button>
+            </div>
+            <div class="card-body">
+              <!-- แถบค้นหาตัวกรอง -->
+              <div class="search-filter-bar">
+                <div class="search-box">
+                  <i class="fas fa-search"></i>
+                  <input type="text" id="recipientSearchInput" class="form-control" placeholder="ค้นหาด้วย เลขบัตรประชาชน, ชื่อ, นามสกุล หรือเลขที่รหัส..." oninput="filterRecipients()">
+                </div>
+                <select id="recipientTypeFilter" class="filter-select" onchange="filterRecipients()">
+                  <option value="All">-- แสดงทุกประเภทคนไข้ --</option>
+                  <option value="นักเรียน/นักศึกษา">นักเรียน/นักศึกษา</option>
+                  <option value="พนักงาน/บุคลากร">พนักงาน/บุคลากร</option>
+                  <option value="ผู้สูงอายุ">ผู้สูงอายุ</option>
+                  <option value="เด็กเล็ก/อนุบาล">เด็กเล็ก/อนุบาล</option>
+                  <option value="บุคคลภายนอก">บุคคลภายนอก</option>
+                </select>
+                <select id="recipientStatusFilter" class="filter-select" onchange="filterRecipients()">
+                  <option value="All">-- ทุกสถานะ --</option>
+                  <option value="Active">ใช้งานปกติ</option>
+                  <option value="Inactive">ปิดประวัติ</option>
+                </select>
+                <button class="btn btn-secondary" onclick="clearRecipientFilters()">
+                  <i class="fas fa-redo"></i> รีเซ็ตตัวกรอง
+                </button>
+              </div>
+
+              <!-- ตารางผู้รับบริการ -->
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>รหัสประจำตัว</th>
+                      <th>ชื่อ-นามสกุล</th>
+                      <th>ชื่อเล่น</th>
+                      <th>ประเภทผู้ป่วย</th>
+                      <th data-label-group>กลุ่ม / ระดับ</th>
+                      <th>โรคประจำตัวคัดกรอง</th>
+                      <th>สถานะ</th>
+                      <th>การจัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recipientsTableBody">
+                    <tr><td colspan="8" class="text-center">กำลังค้นหารายชื่อ...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.3 ประวัติบันทึกเวชระเบียน (Visits Page)
+             ========================================== -->
+        <div id="visitsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-file-medical"></i> บันทึกเวชระเบียนและการเข้ารับบริการ</h3>
+              <button class="btn btn-primary" onclick="openNewVisitModal()">
+                <i class="fas fa-notes-medical"></i> เปิดใบงานรักษาใหม่
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="search-filter-bar">
+                <div class="search-box">
+                  <i class="fas fa-search"></i>
+                  <input type="text" id="visitSearchInput" class="form-control" placeholder="ค้นหาด้วยชื่อคนไข้ หรืออาการสำคัญ..." oninput="filterVisits()">
+                </div>
+                <input type="date" id="visitStartDate" class="form-control filter-select" style="min-width:140px;" onchange="filterVisits()">
+                <input type="date" id="visitEndDate" class="form-control filter-select" style="min-width:140px;" onchange="filterVisits()">
+                <select id="visitOutcomeFilter" class="filter-select" onchange="filterVisits()">
+                  <option value="All">-- ทุกผลการรักษา --</option>
+                  <option value="อาการดีขึ้น กลับไปปฏิบัติกิจกรรม">อาการดีขึ้น กลับบ้าน/งาน</option>
+                  <option value="พักสังเกตอาการ">พักสังเกตอาการ</option>
+                  <option value="ผู้ติดต่อรับกลับ">ผู้ติดต่อรับกลับ</option>
+                  <option value="ส่งต่อสถานพยาบาล">ส่งตัวรักษาต่อ</option>
+                </select>
+                <button class="btn btn-secondary" onclick="clearVisitFilters()">
+                  <i class="fas fa-redo"></i> รีเซ็ต
+                </button>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>เลขเวชระเบียน</th>
+                      <th>วันที่</th>
+                      <th data-label-recipient>ชื่อผู้รับบริการ</th>
+                      <th>อาการสำคัญ</th>
+                      <th>เวลาเข้า</th>
+                      <th>ผลหลังการดูแล</th>
+                      <th>ดูและพิมพ์</th>
+                    </tr>
+                  </thead>
+                  <tbody id="visitsTableBody">
+                    <tr><td colspan="7" class="text-center">กำลังโหลดประวัติการคัดกรองโรค...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.4 สต็อกยาและเวชภัณฑ์ (Medicines Page)
+             ========================================== -->
+        <div id="medicinesPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-capsules"></i> คลังยาและเวชภัณฑ์</h3>
+              <button class="btn btn-primary" onclick="openNewMedModal()">
+                <i class="fas fa-plus"></i> ลงทะเบียนยาใหม่
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>รหัสยา</th>
+                      <th>ชื่อสามัญและเวชภัณฑ์</th>
+                      <th>หมวดหมู่กลุ่มยา</th>
+                      <th>ขนาดความแรง</th>
+                      <th>จำนวนคงคลัง</th>
+                      <th>วันหมดอายุล็อตปัจจุบัน</th>
+                      <th>ชั้นวางยา/ตำแหน่งเก็บ</th>
+                      <th>สถานะ</th>
+                      <th>การจัดการคลัง</th>
+                    </tr>
+                  </thead>
+                  <tbody id="medicinesTableBody">
+                    <tr><td colspan="9" class="text-center">กำลังดึงฐานข้อมูลคงเหลือยา...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.5 รายการส่งตัวโรงพยาบาล (Referral Page)
+             ========================================== -->
+        <div id="referralsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-shipping-fast"></i> บันทึกการส่งต่อการตรวจรักษาภายนอก (Referrals)</h3>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>เลขที่ใบส่งตัว</th>
+                      <th>เลขประวัติเวชระเบียน</th>
+                      <th>วันที่ทำรายการ</th>
+                      <th>โรงพยาบาลปลายทาง</th>
+                      <th>ผู้ควบคุมสุขภาพ</th>
+                      <th>สถานะ</th>
+                      <th>เอกสารออกรายงาน</th>
+                    </tr>
+                  </thead>
+                  <tbody id="referralsTableBody">
+                    <tr><td colspan="7" class="text-center">กำลังโหลดรายการส่งต่อ...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.6 ติดตามอาการผู้ป่วย (Follow Up Page)
+             ========================================== -->
+        <div id="followupsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-history"></i> รายการนัดติดตามอาการสุขภาพ (Follow-Ups)</h3>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>รหัสใบงาน</th>
+                      <th>รหัสอ้างอิงเวชระเบียน</th>
+                      <th data-label-recipient>ชื่อผู้รับบริการ</th>
+                      <th>วันที่นัดติดตาม</th>
+                      <th>คำแนะนำก่อนหน้า</th>
+                      <th>สถานะผลการนัด</th>
+                      <th>ผู้ติดตาม</th>
+                      <th>การจัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="followUpsTableBody">
+                    <tr><td colspan="8" class="text-center">กำลังดึงข้อมูลงานค้างติดตาม...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.7 รายงานสถิติภาพรวม (Reports Page)
+             ========================================== -->
+        <div id="reportsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-print"></i> รายงานสถิติวิเคราะห์เชิงลึกและการวิเคราะห์ข้อมูล</h3>
+            </div>
+            <div class="card-body">
+              <div class="search-filter-bar align-items-end">
+                <div class="form-group mb-0" style="flex:1; min-width:250px;">
+                  <label class="form-label" for="reportTypeSelect">เลือกหัวข้อสถิติรายงาน</label>
+                  <select id="reportTypeSelect" class="filter-select w-100" onchange="loadReports()">
+                    <option value="visit_stats">รายงานข้อมูลการเข้าบริการของคนไข้ทั้งหมด</option>
+                    <option value="frequent_visits">รายงานบุคคลที่เข้ารับบริการบ่อย (ความถี่สูง)</option>
+                    <option value="top_medicines">รายงานยาและเวชภัณฑ์ที่ใช้จ่ายออกสูงสุด</option>
+                    <option value="medicine_warning">รายงานแจ้งเตือนสต็อกยาต่ำและใกล้หมดอายุ</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label">ช่วงวันที่ (เริ่มต้น)</label>
+                  <input type="date" id="reportStartDate" class="form-control" onchange="loadReports()">
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label">ช่วงวันที่ (สิ้นสุด)</label>
+                  <input type="date" id="reportEndDate" class="form-control" onchange="loadReports()">
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label" data-label-recipient>ประเภทผู้รับบริการ</label>
+                  <select id="reportRecipientTypeFilter" class="filter-select" onchange="loadReports()">
+                    <option value="All">-- แสดงคนไข้ทุกประเภท --</option>
+                    <option value="นักเรียน/นักศึกษา">นักเรียน/นักศึกษา</option>
+                    <option value="พนักงาน/บุคลากร">พนักงาน/บุคลากร</option>
+                    <option value="ผู้สูงอายุ">ผู้สูงอายุ</option>
+                    <option value="เด็กเล็ก/อนุบาล">เด็กเล็ก/อนุบาล</option>
+                  </select>
+                </div>
+                <button class="btn btn-outline" onclick="handleExportCsv()">
+                  <i class="fas fa-download"></i> ดาวน์โหลดรายงาน (CSV)
+                </button>
+              </div>
+
+              <!-- พื้นที่บรรจุตารางแสดงรายงานผล -->
+              <div id="reportTableContainer" class="table-responsive mt-3">
+                <div class="empty-state">
+                  <i class="fas fa-chart-pie empty-icon"></i>
+                  <p>กำลังรวบรวมตัวกรองและวิเคราะห์รายงานสรุปผล...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.8 ระบบจัดการบัญชีผู้ใช้ (Users Page - Admin)
+             ========================================== -->
+        <div id="usersPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-users"></i> บัญชีผู้ปฏิบัติงานในระบบ</h3>
+              <button class="btn btn-primary" onclick="openNewUserModal()">
+                <i class="fas fa-user-plus"></i> เพิ่มบัญชีผู้ปฏิบัติงาน
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>ชื่อผู้ใช้งาน</th>
+                      <th>ชื่อ-นามสกุล</th>
+                      <th>ระดับสิทธิ์สิทธิ์การเข้าถึง</th>
+                      <th>ประเภทสิทธิ์บัญชี</th>
+                      <th>สถานะสิทธิ์</th>
+                      <th>การจัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usersTableBody">
+                    <tr><td colspan="6" class="text-center">กำลังจัดเตรียมบัญชีรายชื่อ...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.9 ระบบการตรวจสอบแก้ไขย้อนกลับ (Audit Logs Page)
+             ========================================== -->
+        <div id="logsPage" class="page-view" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fas fa-clipboard-list"></i> ประวัติกิจกรรมระบบและการแก้ไขข้อมูลสำคัญ (Audit Log)</h3>
+            </div>
+            <div class="card-body">
+              <p class="text-xs text-muted mb-3"><i class="fas fa-info-circle"></i> แสดงประวัติข้อมูลการแก้ไข เพิ่มเติม ลบ หรือสลับตั้งค่า 200 รายการล่าสุด ป้องกันการปฏิเสธความรับผิดชอบ</p>
+              <div class="table-responsive">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>รหัสประวัติบันทึก</th>
+                      <th>วัน-เวลาบันทึก</th>
+                      <th>ผู้แก้ไขข้อมูล</th>
+                      <th>สิทธิ์ผู้สั่งการ</th>
+                      <th>ประเภทกิจกรรม</th>
+                      <th>รายละเอียดเชิงลึก</th>
+                    </tr>
+                  </thead>
+                  <tbody id="auditLogsTableBody">
+                    <tr><td colspan="6" class="text-center">กำลังโหลดประวัติระบบ...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             4.10 ระบบตั้งค่าทั่วไปและทดลองใช้ (Settings Page)
+             ========================================== -->
+        <div id="settingsPage" class="page-view" style="display: none;">
+          <div class="row">
+            
+            <!-- ตั้งค่าระบบหลัก -->
+            <div class="col-12 col-lg-8">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title"><i class="fas fa-cogs"></i> การตั้งค่าระบบหลักและข้อความป้ายทะเบียน</h3>
+                </div>
+                <div class="card-body">
+                  <div id="settingsListContainer">
+                    <p class="text-center text-muted">กำลังโหลดข้อกำหนดระบบการระบุค่าตั้งต้น...</p>
+                  </div>
+                  <div class="text-right mt-3">
+                    <button class="btn btn-primary" onclick="handleSaveAllSettings()">
+                      <i class="fas fa-save"></i> บันทึกค่าตั้งค่าระบบใหม่ทั้งหมด
+                    </button>
+                    <button class="btn btn-secondary" onclick="handleRestoreDefaultSettings()">
+                      <i class="fas fa-redo"></i> คืนการตั้งค่าเริ่มต้น
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ส่วนข้อมูล Demo และเคลียร์ดาต้า -->
+            <div class="col-12 col-lg-4">
+              <!-- การจัดการ Demo Mode -->
+              <div class="card mb-4" style="border: 2px solid var(--warning);">
+                <div class="card-header" style="background-color:#fffbeb;">
+                  <h3 class="card-title text-warning-bold"><i class="fas fa-flask"></i> แผงจัดการโหมดทดลองใช้ (Demo Manager)</h3>
+                </div>
+                <div class="card-body">
+                  <p class="text-xs text-muted mb-3">เมื่อมีการบันทึกในโหมดทดลองใช้ ระบบจะแยกการใช้งานโดยกรอกคอลัมน์ IsDemo = TRUE ทั้งหมดโดยอัตโนมัติ คุณสามารถสั่งล้างและตั้งต้นข้อมูลใหม่ได้จากที่นี่</p>
+                  
+                  <h4 style="font-size:0.9rem; font-weight:600;" class="mb-2">สรุปสถิติจำนวนข้อมูลทดลองใช้สะสม:</h4>
+                  <div class="table-responsive mb-3">
+                    <table class="table-custom" style="font-size:0.8rem;">
+                      <tbody id="demoStatsTableBody">
+                        <tr><td colspan="2" class="text-center">ไม่มีข้อมูลตัวเลข...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="form-group mb-2">
+                    <button type="button" id="initDemoBtn" class="btn btn-outline btn-block" onclick="handleInitDemo()">
+                      <i class="fas fa-magic"></i> สร้างข้อมูลทดลองใหม่
+                    </button>
+                  </div>
+                  <div class="form-group">
+                    <button type="button" id="clearDemoBtn" class="btn btn-danger btn-block" style="display:none;" onclick="handleClearDemo()">
+                      <i class="fas fa-trash-alt"></i> ล้างข้อมูลทดลองทั้งหมด
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Advanced Settings (ล้างระบบจริง) -->
+              <div class="card" style="border: 2px solid var(--danger);">
+                <div class="card-header" style="background-color:#fef2f2;">
+                  <h3 class="card-title" style="color:var(--danger);"><i class="fas fa-exclamation-triangle"></i> ขอบเขตความปลอดภัย (จำกัดแอดมิน)</h3>
+                </div>
+                <div class="card-body">
+                  <p class="text-xs text-muted mb-3">ใช้สำหรับเริ่มระบบการทำงานใหม่กับหน่วยงานอื่นหลังจากสาธิตผ่านแล้ว ล้างประวัติจริง IsDemo = FALSE ทั้งหมดโดยไม่ลบการตั้งค่าและบัญชีแอดมิน</p>
+                  <button class="btn btn-danger btn-block" onclick="handleClearOperationalData()">
+                    <i class="fas fa-radiation"></i> ล้างข้อมูลดำเนินงานระบบจริงทั้งหมด
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ==========================================
+       5. หน้าต่าง Modals สำหรับกรอกข้อมูลย่อย
+       ========================================== -->
+
+  <!-- 5.1 Modal เพิ่ม/แก้ไขผู้รับบริการ -->
+  <div id="recipientModal" class="modal-overlay">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h4 id="recipientModalTitle" class="modal-title">ลงทะเบียนประวัติผู้รับบริการใหม่</h4>
+        <button class="modal-close-btn" onclick="closeModal('recipientModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="recipientForm" onsubmit="handleSaveRecipient(e)">
+        <input type="hidden" id="recEditId">
+        <div class="modal-body">
+          
+          <h5 class="section-title mb-2">ข้อมูลส่วนตัว</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">เลขประจำตัวประชาชน/เลขสิทธิ์</label>
+              <input type="text" id="recNationalID" class="form-control" placeholder="1-xxxx-xxxxx-xx-x">
+            </div>
+            <div class="form-group">
+              <label class="form-label">คำนำหน้า</label>
+              <select id="recTitle" class="form-control">
+                <option value="นาย">นาย</option>
+                <option value="นาง">นาง</option>
+                <option value="นางสาว">นางสาว</option>
+                <option value="เด็กชาย">เด็กชาย</option>
+                <option value="เด็กหญิง">เด็กหญิง</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ชื่อจริง *</label>
+              <input type="text" id="recFirstName" class="form-control" placeholder="พิมพ์ชื่อจริง" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">นามสกุล *</label>
+              <input type="text" id="recLastName" class="form-control" placeholder="พิมพ์นามสกุล" required>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ชื่อเล่น</label>
+              <input type="text" id="recNickname" class="form-control" placeholder="ชื่อเรียก">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เพศ</label>
+              <select id="recGender" class="form-control">
+                <option value="ชาย">ชาย</option>
+                <option value="หญิง">หญิง</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">วันเดือนปีเกิด</label>
+              <input type="date" id="recBirthDate" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-label-recipient>ประเภทผู้รับบริการ</label>
+              <select id="recRecipientType" class="form-control">
+                <option value="นักเรียน/นักศึกษา">นักเรียน/นักศึกษา</option>
+                <option value="พนักงาน/บุคลากร">พนักงาน/บุคลากร</option>
+                <option value="ผู้สูงอายุ">ผู้สูงอายุ</option>
+                <option value="เด็กเล็ก/อนุบาล">เด็กเล็ก/อนุบาล</option>
+                <option value="บุคคลภายนอก">บุคคลภายนอก</option>
+              </select>
+            </div>
+          </div>
+
+          <h5 class="section-title mb-2" data-label-group>สังกัด / กลุ่ม / สายการเรียน</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-label-group>กลุ่ม/แผนก</label>
+              <input type="text" id="recGroup" class="form-control" placeholder="เช่น ชั้นเรียน, ฝ่ายขาย">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-label-level>ระดับ/แผนกย่อย</label>
+              <input type="text" id="recLevel" class="form-control" placeholder="เช่น ห้องเรียน, แผนกย่อย">
+            </div>
+            <div class="form-group">
+              <label class="form-label">สังกัดฝ่าย/กอง</label>
+              <input type="text" id="recDepartment" class="form-control" placeholder="ฝ่ายใหญ่">
+            </div>
+            <div class="form-group">
+              <label class="form-label">หน่วยงานย่อย</label>
+              <input type="text" id="recSubUnit" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เลขที่/ลำดับรายชื่อ</label>
+              <input type="text" id="recNumberOrOrder" class="form-control" placeholder="ถ้ามี">
+            </div>
+          </div>
+
+          <h5 class="section-title mb-2">ประวัติทางสุขภาพและข้อจำกัด</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">หมู่โลหิต (Blood Type)</label>
+              <select id="recBloodType" class="form-control">
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="AB">AB</option>
+                <option value="O">O</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">น้ำหนักเริ่มต้น (กก.)</label>
+              <input type="number" id="recWeight" step="0.1" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ส่วนสูงเริ่มต้น (ซม.)</label>
+              <input type="number" id="recHeight" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">โรคประจำตัว</label>
+              <input type="text" id="recCongenitalDiseases" class="form-control" value="-">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ประวัติแพ้ยา (ระวังพิเศษ)</label>
+              <input type="text" id="recDrugAllergies" class="form-control" value="-">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ประวัติแพ้อาหาร</label>
+              <input type="text" id="recFoodAllergies" class="form-control" value="-">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ประวัติการแพ้อื่นๆ</label>
+              <input type="text" id="recOtherAllergies" class="form-control" value="-">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ยาที่ใช้เป็นประจำ</label>
+              <input type="text" id="recRegularMedicines" class="form-control" value="-">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ข้อจำกัดการทำกิจกรรม/โรงพยาบาลที่ใช้ประจำ</label>
+              <input type="text" id="recRegularHospital" class="form-control" value="-">
+            </div>
+          </div>
+
+          <!-- ซ่อนฟิลด์ข้อมูลการปฏิบัติตามความต้องการ -->
+          <input type="hidden" id="recHealthConstraints" value="-">
+
+          <h5 class="section-title mb-2" data-label-contact>ผู้ปกครอง / ผู้ติดต่อฉุกเฉิน</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-label-contact>ชื่อเรียกผู้ติดต่อ</label>
+              <input type="text" id="recContactName" class="form-control" placeholder="ชื่อผู้ติดต่อหลัก">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ความสัมพันธ์</label>
+              <input type="text" id="recContactRelationship" class="form-control" placeholder="เช่น บิดา, มารดา, ภรรยา">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เบอร์โทรศัพท์ผู้ติดต่อ</label>
+              <input type="text" id="recContactPhone" class="form-control" placeholder="08x-xxx-xxxx">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ผู้ติดต่อฉุกเฉินสำรอง</label>
+              <input type="text" id="recEmergencyContact" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เบอร์โทรติดต่อฉุกเฉิน</label>
+              <input type="text" id="recEmergencyPhone" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">หมายเหตุการประเมินสุขภาพภายนอกเพิ่มเติม</label>
+            <textarea id="recNote" class="form-control" rows="2"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">สถานะทะเบียน</label>
+            <select id="recStatus" class="form-control">
+              <option value="Active">ใช้งานประวัติปกติ</option>
+              <option value="Inactive">ระงับการบริการ</option>
+            </select>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('recipientModal')">ยกเลิก</button>
+          <button type="submit" id="recipientSubmitBtn" class="btn btn-primary" onclick="handleSaveRecipient(event)">
+            <i class="fas fa-save"></i> บันทึกข้อมูล
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.2 Modal แฟ้มประวัติผู้รับบริการอย่างละเอียด -->
+  <div id="profileModal" class="modal-overlay">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h4>แฟ้มประวัติสุขภาพเวชระเบียนสะสม: <span id="profRecId">-</span></h4>
+        <button class="modal-close-btn" onclick="closeModal('profileModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- แถบประวัติแพ้ยา คัดกรองเตือนเด่นชัด -->
+        <div id="profileAlertsBox"></div>
+
+        <div class="row">
+          <div class="col-md-7">
+            <h5 class="section-title mb-2">ข้อมูลประวัติบุคคล</h5>
+            <div style="font-size:0.95rem; line-height:1.8;">
+              <div><strong>ชื่อ-นามสกุล:</strong> <span id="profFullName">-</span></div>
+              <div><strong>ประเภทผู้รับบริการ:</strong> <span id="profType">-</span></div>
+              <div data-label-group><strong>กลุ่ม/ระดับ:</strong> <span id="profGroup">-</span></div>
+              <div><strong>หน่วยงานย่อย:</strong> <span id="profSubUnit">-</span></div>
+              <div><strong>อายุสะสม:</strong> <span id="profAge">-</span></div>
+              <div><strong>กรุ๊ปเลือด:</strong> <span id="profBlood">-</span></div>
+              <div><strong>สถานะเวชระเบียน:</strong> <span id="profStatus">-</span></div>
+            </div>
+          </div>
+          <div class="col-md-5">
+            <h5 class="section-title mb-2">การติดต่อเหตุการณ์ฉุกเฉิน</h5>
+            <div style="font-size:0.925rem; line-height:1.8;">
+              <div data-label-contact><strong>ผู้ติดต่อหลัก:</strong> <span id="profContact">-</span></div>
+              <div><strong>กรณีฉุกเฉินสำรอง:</strong> <span id="profEmergency">-</span></div>
+            </div>
+          </div>
+        </div>
+
+        <h5 class="section-title mt-4 mb-2">ข้อมูลประวัติแพ้ยาและโรคประจำตัว</h5>
+        <div class="row" style="font-size:0.925rem; line-height:1.8;">
+          <div class="col-md-4"><strong>โรคประจำตัว:</strong> <span id="profCongenital">-</span></div>
+          <div class="col-md-4"><strong class="text-danger">แพ้ยา:</strong> <span id="profDrugAllergy">-</span></div>
+          <div class="col-md-4"><strong>แพ้อาหาร:</strong> <span id="profFoodAllergy">-</span></div>
+          <div class="col-md-4"><strong>แพ้อื่นๆ:</strong> <span id="profOtherAllergy">-</span></div>
+          <div class="col-md-4"><strong>ยาที่ทานประจำ:</strong> <span id="profRegularMed">-</span></div>
+          <div class="col-md-4"><strong>โรงพยาบาล/ข้อจำกัด:</strong> <span id="profConstraint">-</span></div>
+          <div class="col-12 mt-1"><strong>หมายเหตุเสริม:</strong> <span id="profNote">-</span></div>
+        </div>
+
+        <!-- ประวัติการเข้ารับบริการของคนไข้สะสม -->
+        <h5 class="section-title mt-4 mb-2">ประวัติการเข้ารับบริการห้องรักษาพยาบาล</h5>
+        <div class="table-responsive">
+          <table class="table-custom" style="font-size:0.85rem;">
+            <thead>
+              <tr>
+                <th>เลขประวัติ</th>
+                <th>วันที่ - เวลาเข้า</th>
+                <th>อาการสำคัญ</th>
+                <th>ผลหลังการดูแล</th>
+                <th>ผู้บันทึกการดูแล</th>
+                <th>เปิดดูใบงาน</th>
+              </tr>
+            </thead>
+            <tbody id="profileVisitsTableBody">
+              <tr><td colspan="6" class="text-center">กำลังโหลดประวัติ...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('profileModal')">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5.3 Modal บันทึกเวชระเบียน/รักษาใหม่ -->
+  <div id="visitModal" class="modal-overlay">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h4>บันทึกข้อมูลและรายงานการตรวจสุขภาพ</h4>
+        <button class="modal-close-btn" onclick="closeModal('visitModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="visitForm" onsubmit="handleSaveVisit(e)">
+        <div class="modal-body">
+          
+          <h5 class="section-title mb-2">1. ค้นหาและบันทึกผู้เข้ารับการดูแล</h5>
+          <div class="row align-items-end mb-2">
+            <div class="col-md-5">
+              <label class="form-label" data-label-recipient>ค้นหาชื่อผู้รับบริการ *</label>
+              <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="visitSearchQuery" class="form-control" placeholder="พิมพ์ชื่อเพื่อค้นหารายชื่อด่วน...">
+              </div>
+            </div>
+            <div class="col-md-2">
+              <button type="button" class="btn btn-outline btn-block" onclick="handleQuickSearchRecipient()">
+                <i class="fas fa-search"></i> ค้นหา
+              </button>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label" data-label-recipient>ผู้รับบริการที่เลือก *</label>
+              <input type="hidden" id="visitSelectedRecipientID">
+              <input type="text" id="visitRecipientNameInput" class="form-control" placeholder="กรุณาค้นหาแล้วเลือกรายชื่อ" readonly required>
+              <input type="hidden" id="visitDrugAllergyCheckText">
+            </div>
+          </div>
+          
+          <div id="visitRecipientSelectContainer" class="mb-2"></div>
+          
+          <!-- แผงเตือนพิเศษเมื่อมีประวัติแพ้ยาหรือโรคประจำตัว -->
+          <div id="visitAllergyAlertBox" class="mb-3"></div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">วันที่รับบริการ *</label>
+              <input type="date" id="visitDate" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">เวลาเข้า *</label>
+              <input type="time" id="visitTimeIn" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">เวลาออก</label>
+              <input type="time" id="visitTimeOut" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ผู้นำส่ง/พามา</label>
+              <input type="text" id="visitAccompaniedBy" class="form-control" placeholder="เช่น เพื่อนร่วมงาน, ตนเอง">
+            </div>
+          </div>
+
+          <h5 class="section-title mb-2">2. คัดกรองและประเมินสัญญาณชีพ (Vital Signs)</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">อุณหภูมิร่างกาย (°C)</label>
+              <input type="number" id="vitalTemp" step="0.1" class="form-control" placeholder="เช่น 36.5">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ความดันโลหิตตัวบน (systolic)</label>
+              <input type="number" id="vitalBpSys" class="form-control" placeholder="มม.ปรอท">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ความดันโลหิตตัวล่าง (diastolic)</label>
+              <input type="number" id="vitalBpDia" class="form-control" placeholder="มม.ปรอท">
+            </div>
+            <div class="form-group">
+              <label class="form-label">อัตราชีพจร/อัตราการเต้นหัวใจ</label>
+              <input type="number" id="vitalPulse" class="form-control" placeholder="ครั้ง/นาที">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">อัตราการหายใจ (RR)</label>
+              <input type="number" id="vitalRr" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ระดับออกซิเจนปลายนิ้ว (O2 Sat %)</label>
+              <input type="number" id="vitalO2" class="form-control" placeholder="ปกติควร &gt;= 95">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ระดับความรู้สึกเจ็บปวด (Pain Score)</label>
+              <select id="vitalPain" class="form-control">
+                <option value="0">0 - ไม่เจ็บปวดเลย</option>
+                <option value="1">1 - เจ็บปวดเล็กน้อย</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4 - เจ็บปวดปานกลาง</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7 - เจ็บรุนแรง</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10 - เจ็บปวดขีดสุด</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ระดับความรู้สึกตัว</label>
+              <select id="vitalConscious" class="form-control">
+                <option value="รู้สึกตัวดี">รู้สึกตัวดี</option>
+                <option value="สับสน/งุนงง">สับสน/งุนงง</option>
+                <option value="ตอบสนองต่อเสียงเรียก">ตอบสนองต่อเสียงเรียก</option>
+                <option value="ตอบสนองต่อสิ่งเร้าความเจ็บ">ตอบสนองต่อความเจ็บ</option>
+                <option value="หมดสติ">หมดสติ/ไม่ตอบสนอง</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">น้ำหนัก (กก.)</label>
+              <input type="number" id="vitalWeight" step="0.1" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ส่วนสูง (ซม.)</label>
+              <input type="number" id="vitalHeight" class="form-control">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">บันทึกเพิ่มเติมสัญญาณชีพ</label>
+              <input type="text" id="vitalNote" class="form-control">
+            </div>
+          </div>
+
+          <h5 class="section-title mb-2">3. ข้อมูลวินิจฉัยและอาการเบื้องต้น</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ประเภทเหตุการณ์</label>
+              <select id="visitIncidentType" class="form-control">
+                <option value="เจ็บป่วยทั่วไป">เจ็บป่วยทั่วไป</option>
+                <option value="เจ็บป่วยเฉียบพลัน/วิกฤต">เจ็บป่วยเฉียบพลัน/วิกฤต</option>
+                <option value="อุบัติเหตุจากการทำกิจกรรม">อุบัติเหตุระหว่างกิจกรรม</option>
+                <option value="อุบัติเหตุจากการทำงาน">อุบัติเหตุจากการทำงาน</option>
+                <option value="ตรวจคัดกรองโรค/สุขภาพประจำปี">ตรวจสุขภาพประจำตัว</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ความเร่งด่วน</label>
+              <select id="visitUrgencyLevel" class="form-control">
+                <option value="Green">สีเขียว - ปกติ/ไม่เร่งด่วน</option>
+                <option value="Yellow">สีเหลือง - กึ่งเร่งด่วน</option>
+                <option value="Red">สีแดง - ฉุกเฉิน/วิกฤตด่วน</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">สถานที่เกิดเหตุ/ตำแหน่งงานที่ทำงาน</label>
+              <input type="text" id="visitIncidentLocation" class="form-control" placeholder="ระบุตึก หรือแผนก">
+            </div>
+            <div class="form-group">
+              <label class="form-label">กิจกรรมขณะเกิดอาการ/ทำงาน</label>
+              <input type="text" id="visitIncidentActivity" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">อาการสำคัญเบื้องต้น * (Chief Complaint)</label>
+            <input type="text" id="visitChiefComplaint" class="form-control" placeholder="ปวดศีรษะ ปวดท้อง มีไข้ เป็นลมหมดสติ..." required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">รายละเอียดประวัติการรักษา/พฤติการณ์อุบัติเหตุเพิ่มเติม</label>
+            <textarea id="visitIncidentDetails" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">การวินิจฉัยโรคเบื้องต้น (Diagnosis)</label>
+              <input type="text" id="assessDiagnosis" class="form-control" placeholder="เช่น Common Cold, Tension Headache">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label">รายละเอียดการตรวจประเมินของเจ้าหน้าที่</label>
+              <input type="text" id="assessDetails" class="form-control">
+            </div>
+          </div>
+
+          <h5 class="section-title mb-2">4. การดูแล ปฐมพยาบาล และการจ่ายยา</h5>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">การดูแล/รักษาพยาบาลเบื้องต้น (Treatment)</label>
+              <input type="text" id="treatDetails" class="form-control" placeholder="เช่น เช็ดตัวลดไข้ ทำแผล ล้างตา">
+            </div>
+            <div class="form-group">
+              <label class="form-label">หมายเหตุการพยาบาล/แนะนำเตียงพัก</label>
+              <input type="text" id="treatNote" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ผลลัพธ์การเข้ารับการบริการ (Outcome) *</label>
+              <select id="visitOutcome" class="form-control" required>
+                <option value="อาการดีขึ้น กลับไปปฏิบัติกิจกรรม">อาการดีขึ้น กลับบ้าน/งาน</option>
+                <option value="พักสังเกตอาการ">พักสังเกตอาการห้องพยาบาล</option>
+                <option value="ผู้ติดต่อรับกลับ">ผู้ติดต่อรับกลับ</option>
+                <option value="ส่งต่อสถานพยาบาล">ส่งต่อสถานพยาบาลปลายทาง</option>
+                <option value="เรียกรถฉุกเฉิน">เรียกรถฉุกเฉิน/สายด่วน 1669</option>
+                <option value="นัดติดตามอาการ">นัดติดตามอาการย้อนหลัง</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- กล่องจ่ายยา (แสดงผลเฉพาะเมื่อเปิดใช้โมดูลยา) -->
+          <div id="visitMedicineSection" style="display: none;">
+            <h5 class="section-title mb-2"><i class="fas fa-pills"></i> การสั่งจ่ายยาและตัดสต็อก</h5>
+            
+            <div class="row align-items-end mb-3">
+              <div class="col-md-6">
+                <label class="form-label">เลือกรายการยาคงคลัง</label>
+                <select id="visitAddMedSelect" class="form-control"></select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">จำนวน</label>
+                <input type="number" id="visitAddMedQty" class="form-control" value="1" min="1">
+              </div>
+              <div class="col-md-4">
+                <button type="button" class="btn btn-outline btn-block" onclick="handleAddMedicineRow()">
+                  <i class="fas fa-plus"></i> เพิ่มเข้าใบตรวจ
+                </button>
+              </div>
+            </div>
+
+            <!-- รายการยาที่เลือกจ่ายจะมาสร้างแถวที่นี่ -->
+            <div id="visitMedicinesList" class="mb-3"></div>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('visitModal')">ยกเลิก</button>
+          <button type="submit" id="visitSubmitBtn" class="btn btn-primary" onclick="handleSaveVisit(event)">
+            <i class="fas fa-save"></i> บันทึกใบงานตรวจรักษา
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.4 Modal ดูประวัติเวชระเบียนเชิงลึก -->
+  <div id="visitDetailsModal" class="modal-overlay">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h4>เวชระเบียนการเข้ารับบริการห้องรักษาพยาบาล: <span id="detVisitID">-</span></h4>
+        <button class="modal-close-btn" onclick="closeModal('visitDetailsModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <div><strong>วันที่รับบริการ:</strong> <span id="detVisitDate">-</span></div>
+            <div data-label-recipient><strong>ผู้รับบริการ:</strong> <span id="detRecipient">-</span></div>
+            <div data-label-group><strong>กลุ่ม/ระดับ:</strong> <span id="detGroup">-</span></div>
+          </div>
+          <div class="col-md-6">
+            <div><strong>ผู้ประเมินบันทึก:</strong> <span id="detRecordedBy">-</span></div>
+            <div><strong>สถานะผลการตรวจรักษา:</strong> <span id="detOutcome">-</span></div>
+          </div>
+        </div>
+
+        <h5 class="section-title">อาการสำคัญและเหตุการณ์พฤติการณ์</h5>
+        <div style="font-size:0.95rem; line-height:1.6;" class="mb-3 p-3 border rounded bg-light">
+          <div><strong>อาการสำคัญ:</strong> <span id="detComplaint">-</span></div>
+          <div><strong>รายละเอียดพฤติการณ์เพิ่มเติม:</strong> <span id="detDetails">-</span></div>
+        </div>
+
+        <h5 class="section-title">ข้อมูลตรวจคัดกรองสัญญาณชีพ</h5>
+        <div id="detVitalsSection" class="mb-3 p-3 border rounded bg-light"></div>
+
+        <h5 class="section-title">ผลวิเคราะห์และการประเมินทางคลินิก</h5>
+        <div id="detAssessmentSection" class="mb-3 p-3 border rounded bg-light"></div>
+
+        <h5 class="section-title">การปฐมพยาบาลการพยาบาลเบื้องต้น</h5>
+        <div id="detTreatmentSection" class="mb-3 p-3 border rounded bg-light"></div>
+
+        <h5 class="section-title med-module-only">ประวัติการจ่ายยาเวชภัณฑ์</h5>
+        <div id="detMedicinesSection" class="mb-3 med-module-only"></div>
+
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <div id="visitDetailsActions"></div>
+        <button class="btn btn-secondary" onclick="closeModal('visitDetailsModal')">ปิดหน้าจอ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5.5 Modal เพิ่ม/แก้ไข ยาในคลัง -->
+  <div id="medModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h4 id="medModalTitle" class="modal-title">ลงทะเบียนทะเบียนยาและเวชภัณฑ์ใหม่</h4>
+        <button class="modal-close-btn" onclick="closeModal('medModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="medForm" onsubmit="handleSaveMedicine(e)">
+        <input type="hidden" id="medEditId">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">รหัสยาคงคลัง *</label>
+              <input type="text" id="medCode" class="form-control" placeholder="เช่น PAR-500" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ชื่อยาและเวชภัณฑ์ทั่วไป *</label>
+              <input type="text" id="medName" class="form-control" placeholder="ชื่อเรียกภาษาไทย/อังกฤษ" required>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">หมวดหมู่กลุ่มยา</label>
+              <select id="medCategory" class="form-control">
+                <option value="ยาระงับปวด/ยาลดไข้">ยาระงับปวด/ยาลดไข้</option>
+                <option value="ยาแก้แพ้/ลดน้ำมูก">ยาแก้แพ้/ลดน้ำมูก</option>
+                <option value="ยาทางเดินอาหาร">ยาทางเดินอาหาร</option>
+                <option value="ยาฆ่าเชื้อ/ยาปฏิชีวนะ">ยาฆ่าเชื้อ/ยาปฏิชีวนะ</option>
+                <option value="อุปกรณ์ปฐมพยาบาล/ทำแผล">อุปกรณ์ปฐมพยาบาล/ทำแผล</option>
+                <option value="อื่นๆ">อื่นๆ</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">รูปแบบยา</label>
+              <select id="medForm" class="form-control">
+                <option value="เม็ด">เม็ด</option>
+                <option value="น้ำ/ยาน้ำ">น้ำ/ยาน้ำ</option>
+                <option value="ซอง/ผงเกลือแร่">ซอง/ผงเกลือแร่</option>
+                <option value="ครีม/ขี้ผึ้ง">ครีม/ขี้ผึ้ง</option>
+                <option value="สเปรย์/พ่น">สเปรย์/พ่น</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ขนาดความแรง (Strength)</label>
+              <input type="text" id="medStrength" class="form-control" placeholder="เช่น 500 mg">
+            </div>
+            <div class="form-group">
+              <label class="form-label">หน่วยนับ</label>
+              <input type="text" id="medUnit" class="form-control" placeholder="เม็ด, ซอง, ขวด" value="เม็ด" required>
+            </div>
+          </div>
+          
+          <div class="form-grid">
+            <div class="form-group" id="medQtyGroup">
+              <label class="form-label">จำนวนเริ่มต้นนำเข้าสต็อก</label>
+              <input type="number" id="medQty" class="form-control" value="0" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">จุดแจ้งเตือนขั้นต่ำคงเหลือ</label>
+              <input type="number" id="medAlertThreshold" class="form-control" value="10" min="0">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">เลขล็อตที่รับ (Batch No.)</label>
+              <input type="text" id="medBatchNumber" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">วันที่รับเข้า</label>
+              <input type="date" id="medReceivedDate" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">วันยาหมดอายุล็อตปัจจุบัน</label>
+              <input type="date" id="medExpiryDate" class="form-control">
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ชั้นวางยา/ตำแหน่งเก็บ</label>
+              <input type="text" id="medStorageLocation" class="form-control" placeholder="ตู้ 1 ชั้น 2">
+            </div>
+            <div class="form-group">
+              <label class="form-label">คำเตือน/วิธีรับประทานทั่วไป</label>
+              <input type="text" id="medPrecautions" class="form-control" placeholder="กินหลังอาหารทันที ง่วงนอน">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">สถานะยา</label>
+            <select id="medStatus" class="form-control">
+              <option value="Active">เปิดใช้งานปกติ</option>
+              <option value="Inactive">ระงับจ่ายชั่วคราว</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('medModal')">ยกเลิก</button>
+          <button type="submit" id="medSubmitBtn" class="btn btn-primary" onclick="handleSaveMedicine(event)">
+            <i class="fas fa-save"></i> บันทึกยาคงคลัง
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.6 Modal นำเข้าสต็อกยาเพิ่ม -->
+  <div id="receiveStockModal" class="modal-overlay">
+    <div class="modal-box small">
+      <div class="modal-header">
+        <h4>บันทึกการรับยาเพิ่มเข้าสต็อก</h4>
+        <button class="modal-close-btn" onclick="closeModal('receiveStockModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="receiveStockForm" onsubmit="handleReceiveStock(e)">
+        <input type="hidden" id="recStockMedId">
+        <div class="modal-body">
+          <div class="mb-3">
+            <strong>ชื่อเวชภัณฑ์ที่จะรับเข้า:</strong> <span id="recStockNameDisplay">-</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">จำนวนนำเข้าคลังยา *</label>
+            <input type="number" id="recStockQty" class="form-control" value="100" min="1" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">เลขที่อ้างอิงใบสั่งซื้อ/นำเข้า</label>
+            <input type="text" id="recStockRef" class="form-control" placeholder="เช่น PO-xxxx">
+          </div>
+          <div class="form-group">
+            <label class="form-label">บันทึกช่วยจำเพิ่มเติม</label>
+            <input type="text" id="recStockNotes" class="form-control" placeholder="เช่น รับบริจาค, จัดซื้อเพิ่ม">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('receiveStockModal')">ยกเลิก</button>
+          <button type="submit" id="recStockSubmitBtn" class="btn btn-primary" onclick="handleReceiveStock(event)">
+            <i class="fas fa-check"></i> บันทึกนำเข้าคลัง
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.7 Modal ปรับปรุงสต็อกด้วยมือ (Adjust Stock) -->
+  <div id="adjustStockModal" class="modal-overlay">
+    <div class="modal-box small">
+      <div class="modal-header">
+        <h4>ปรับยอดสินค้าคงคลังด้วยมือ (Manual Adjust)</h4>
+        <button class="modal-close-btn" onclick="closeModal('adjustStockModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="adjustStockForm" onsubmit="handleAdjustStock(e)">
+        <input type="hidden" id="adjStockMedId">
+        <div class="modal-body">
+          <div class="mb-3">
+            <strong>รายการเวชภัณฑ์:</strong> <span id="adjStockNameDisplay">-</span>
+          </div>
+          <p class="text-xs text-muted mb-2">ป้อนค่าตัวเลขบวกเพื่อระบุยอดเพิ่ม และค่าติดลบหากเบิกออกฉุกเฉินหรือชำรุดเสียหาย</p>
+          <div class="form-group">
+            <label class="form-label">จำนวนปรับเปลี่ยนสุทธิ (ค่าบวกหรือลบ) *</label>
+            <input type="number" id="adjStockQty" class="form-control" value="-10" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">ระบุเหตุผลความจำเป็นในการปรับสต็อก *</label>
+            <input type="text" id="adjStockNotes" class="form-control" placeholder="เช่น ยาชำรุด, ตรวจนับสต็อกขาดหาย" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('adjustStockModal')">ยกเลิก</button>
+          <button type="submit" id="adjStockSubmitBtn" class="btn btn-primary" onclick="handleAdjustStock(event)">
+            <i class="fas fa-sliders-h"></i> ปรับสต็อกเรียบร้อย
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.8 Modal แจ้งเตือนผู้ปกครอง/ผู้ติดต่อฉุกเฉิน -->
+  <div id="contactNotificationModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h4>บันทึกการประสานงานแจ้งติดต่อผู้เกี่ยวข้อง</h4>
+        <button class="modal-close-btn" onclick="closeModal('contactNotificationModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="contactNotificationForm" onsubmit="handleSaveContactNotification(e)">
+        <input type="hidden" id="ntfVisitID">
+        <input type="hidden" id="ntfRecipientID">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ชื่อผู้รับติดต่อประสานงาน *</label>
+              <input type="text" id="ntfName" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ความสัมพันธ์กับผู้ป่วย</label>
+              <input type="text" id="ntfRelationship" class="form-control" placeholder="มารดา, เพื่อนร่วมงาน">
+            </div>
+            <div class="form-group">
+              <label class="form-label">เบอร์โทรศัพท์ติดต่อ *</label>
+              <input type="text" id="ntfPhone" class="form-control" required>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">ช่องทางการติดต่อประสาน</label>
+              <select id="ntfChannel" class="form-control">
+                <option value="โทรศัพท์">โทรศัพท์สายด่วน</option>
+                <option value="LINE/แอปพลิเคชัน">LINE/แอปพลิเคชันมือถือ</option>
+                <option value="แจ้งด้วยวาจาโดยตรง">ประสานตรงด้วยวาจา</option>
+              </select>
+            </div>
+            <div class="form-group" style="padding-top:35px;">
+              <input type="checkbox" id="ntfIsSuccess" class="form-check-input" checked>
+              <label class="form-label d-inline" for="ntfIsSuccess">ติดต่อเจรจาพูดคุยสำเร็จ</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">รายละเอียดข้อมูลที่แจ้งแก่ผู้ติดต่อ</label>
+            <textarea id="ntfDetails" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">ความเห็น/ผลตอบรับจากผู้ติดต่อ</label>
+            <textarea id="ntfFeedback" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">จะเดินทางมารับกลับหรือไม่</label>
+              <select id="ntfWillPickUp" class="form-control">
+                <option value="NO">ไม่ต้องมารับกลับ (พักฟื้นแล้วไปเรียน/ทำงานต่อ)</option>
+                <option value="YES">กำลังเดินทางมารับตัวกลับบ้าน</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ระบุเวลาเดินทางมาถึงโดยประมาณ</label>
+              <input type="time" id="ntfPickUpTime" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('contactNotificationModal')">ยกเลิก</button>
+          <button type="submit" id="ntfSubmitBtn" class="btn btn-primary" onclick="handleSaveContactNotification(event)">
+            <i class="fas fa-bell"></i> บันทึกรายงานการแจ้ง
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.9 Modal บันทึกใบงานส่งตัวไปสถานพยาบาลปลายทาง -->
+  <div id="referralModal" class="modal-overlay">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h4>สร้างรายงานส่งต่อไปยังโรงพยาบาลภายนอก (A4 Referral Form)</h4>
+        <button class="modal-close-btn" onclick="closeModal('referralModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="referralForm" onsubmit="handleSaveReferral(e)">
+        <input type="hidden" id="refVisitID">
+        <input type="hidden" id="refRecipientID">
+        <input type="hidden" id="refEditId">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">อาการสำคัญเบื้องต้น</label>
+            <input type="text" id="refChiefComplaint" class="form-control" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">ผลการตรวจคัดกรองสัญญาณชีพล่าสุด</label>
+            <input type="text" id="refLatestVitals" class="form-control" readonly>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">การพยาบาลเบื้องต้นที่ดูแลก่อนหน้า</label>
+              <input type="text" id="refPreReferralCare" class="form-control" readonly>
+            </div>
+            <div class="form-group">
+              <label class="form-label">ยาเวชภัณฑ์ที่ได้รับก่อนส่งตัว</label>
+              <input type="text" id="refMedicinesGiven" class="form-control" readonly>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">เหตุผลความจำเป็นในการส่งต่อผู้ป่วย *</label>
+            <textarea id="refReasonForReferral" class="form-control" rows="2" required></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">โรงพยาบาล/สถานพยาบาลปลายทาง *</label>
+              <input type="text" id="refDestinationHospital" class="form-control" placeholder="เช่น โรงพยาบาลราชวิถี" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">วิธีเดินทางการนำส่งตัว</label>
+              <input type="text" id="refTravelMethod" class="form-control" placeholder="เช่น รถฉุกเฉิน, รถส่วนบุคคล">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ผู้ควบคุมติดตามคนไข้</label>
+              <input type="text" id="refEscort" class="form-control" placeholder="เช่น พยาบาลประจำห้องเวชระเบียน">
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group" style="padding-top:35px;">
+              <input type="checkbox" id="refContactNotified" class="form-check-input" checked>
+              <label class="form-label d-inline" for="refContactNotified">ญาติหรือผู้ติดต่อรับทราบการเดินทางส่งต่อแล้ว</label>
+            </div>
+            <div class="form-group">
+              <label class="form-label">เวลาเดินทางออกเดินทาง</label>
+              <input type="time" id="refTimeDeparted" class="form-control">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">หมายเหตุการพยาบาลเพิ่มเติมส่งต่อ</label>
+            <input type="text" id="refNote" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('referralModal')">ยกเลิก</button>
+          <button type="submit" id="referralSubmitBtn" class="btn btn-primary" onclick="handleSaveReferral(event)">
+            <i class="fas fa-print"></i> บันทึกและจัดพิมพ์ใบงานส่งตัว
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.10 Modal ตั้งนัดติดตามอาการผู้รับบริการ (Follow Up Modal) -->
+  <div id="followUpModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h4>จัดตารางการติดตามนัดหมายสุขภาพ</h4>
+        <button class="modal-close-btn" onclick="closeModal('followUpModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="followUpForm" onsubmit="handleSaveFollowUp(e)">
+        <input type="hidden" id="folVisitID">
+        <input type="hidden" id="folEditId">
+        <input type="hidden" id="folRecipientID">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">วันที่นัดหมายคัดกรองติดตาม *</label>
+              <input type="date" id="folScheduledDate" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">คำแนะนำก่อนหน้านัดหมาย</label>
+              <input type="text" id="folInstructions" class="form-control" placeholder="เช่น ติดตามอาการหอบหืด">
+            </div>
+          </div>
+
+          <!-- แผงบันทึกผลติดตาม (แสดงเฉพาะเมื่อบันทึกการติดตามสำเร็จ) -->
+          <div id="folResultArea" style="display: none; border-top:1px solid var(--border); padding-top:15px; margin-top:15px;">
+            <h5 class="section-title mb-2">รายงานความคืบหน้าสุขภาพ</h5>
+            <div class="form-group">
+              <label class="form-label">อาการสำคัญล่าสุดหลังสอบถาม</label>
+              <input type="text" id="folSymptoms" class="form-control" placeholder="เช่น หายใจสะดวกขึ้น ไม่มีไข้แล้ว">
+            </div>
+            <div class="form-group">
+              <label class="form-label">ผลสรุปตรวจจากแพทย์โรงพยาบาลภายนอก (ถ้ามี)</label>
+              <input type="text" id="folHospitalOutcome" class="form-control" placeholder="ระบุการประเมินรพ.ปลายทาง">
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">วันที่อนุญาตให้กลับมาเรียน/ทำงาน</label>
+                <input type="date" id="folReturnDate" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">ข้อจำกัดด้านการเรียน/ทำงาน</label>
+                <input type="text" id="folConstraints" class="form-control" value="-">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">สถานะผลการนัดหมาย</label>
+              <select id="folStatus" class="form-control">
+                <option value="Pending">รอนัดตามผลสัมภาษณ์</option>
+                <option value="Completed">ติดตามอาการเรียบร้อยแล้ว (สำเร็จ)</option>
+                <option value="Cancelled">ยกเลิกนัดติดตาม</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('followUpModal')">ยกเลิก</button>
+          <button type="submit" id="followUpSubmitBtn" class="btn btn-primary" onclick="handleSaveFollowUp(event)">
+            <i class="fas fa-check"></i> บันทึกแผนการติดตาม
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.11 Modal จัดการ/เพิ่มผู้ปฏิบัติงานใหม่ -->
+  <div id="userModal" class="modal-overlay">
+    <div class="modal-box small">
+      <div class="modal-header">
+        <h4>เพิ่มบัญชีผู้ใช้งานระบบ</h4>
+        <button class="modal-close-btn" onclick="closeModal('userModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="userForm" onsubmit="handleSaveUser(e)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">ชื่อผู้ใช้งาน * (ภาษาอังกฤษตัวเล็กเท่านั้น)</label>
+            <input type="text" id="userUsername" class="form-control" placeholder="เช่น nurse_somri" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label" id="userPasswordLabel">รหัสผ่านเข้าใช้งาน *</label>
+            <input type="password" id="userPassword" class="form-control" placeholder="รหัสความยาว 4 ตัวอักษรขึ้นไป" required autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ชื่อ-นามสกุลจริงผู้ปฏิบัติการ *</label>
+            <input type="text" id="userFullName" class="form-control" placeholder="พยาบาล สมศรี จริงใจ" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">ระดับสิทธิ์สิทธิ์การเข้าถึง</label>
+            <select id="userRole" class="form-control">
+              <option value="MEDICAL">MEDICAL - พยาบาล/เจ้าหน้าที่ตรวจสุขภาพ</option>
+              <option value="STAFF">STAFF - เจ้าหน้าที่ค้นประวัติทั่วไป</option>
+              <option value="VIEWER">VIEWER - ดูรายงานสถิติรวม (ไม่เห็นชื่อ)</option>
+              <option value="ADMIN">ADMIN - ผู้ดูแลระบบควบคุมการตั้งค่า</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('userModal')">ยกเลิก</button>
+          <button type="submit" id="userSubmitBtn" class="btn btn-primary" onclick="handleSaveUser(event)">
+            <i class="fas fa-save"></i> บันทึกสร้างบัญชี
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5.12 Modal เปลี่ยนรหัสผ่านผู้ใช้ระบบ -->
+  <div id="changePasswordModal" class="modal-overlay">
+    <div class="modal-box small">
+      <div class="modal-header">
+        <h4>ปรับแก้รหัสผ่านเข้าใช้งานใหม่</h4>
+        <button class="modal-close-btn" onclick="closeModal('changePasswordModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="changePasswordForm" onsubmit="handleChangePassword(e)">
+        <input type="hidden" id="chPassUsername">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">รหัสผ่านเข้าใช้ชุดใหม่ *</label>
+            <input type="password" id="chPassNewPassword" class="form-control" placeholder="กรอกรหัสผ่านความปลอดภัยใหม่" required autocomplete="new-password">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">ยกเลิก</button>
+          <button type="submit" id="changePasswordSubmitBtn" class="btn btn-primary" onclick="handleChangePassword(event)">
+            <i class="fas fa-key"></i> ยืนยันรหัสผ่านใหม่
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       6. โหลดจาวาสคริปต์สคริปต์หลัก (Scripts)
+       ========================================== -->
+  <?!= include('Scripts'); ?>
+
+</body>
+</html>

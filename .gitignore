@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+*.log
+.clasprc.json
+.clasp.json
+SetupSecrets.gs
+*secrets*
+node_modules/
+.env
+.env.local

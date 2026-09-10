@@ -1,0 +1,2505 @@
+<script>
+// ==========================================
+// สถานะแอปพลิเคชัน (Global State)
+// ==========================================
+let appState = {
+  sessionToken: sessionStorage.getItem('sessionToken') || '',
+  currentUser: null,
+  settings: {},
+  activePage: 'dashboard',
+  recipientsList: [],
+  medicinesList: [],
+  visitsList: [],
+  selectedRecipient: null,
+  selectedVisit: null
+};
+
+// ==========================================
+// ตัวช่วยการทำงานหลัก (Core Helpers)
+// ==========================================
+
+/**
+ * แสดงแถบ Loading Overlay
+ */
+function showLoading(text = 'กำลังโหลดข้อมูล...') {
+  document.getElementById('loadingText').textContent = text;
+  document.getElementById('loadingOverlay').classList.add('active');
+}
+
+/**
+ * ซ่อนแถบ Loading Overlay
+ */
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+/**
+ * แสดง Toast Notification
+ */
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  
+  let icon = 'fa-check-circle';
+  if (type === 'danger') icon = 'fa-exclamation-circle';
+  if (type === 'warning') icon = 'fa-exclamation-triangle';
+  
+  toast.innerHTML = `
+    <i class="fas ${icon} toast-icon"></i>
+    <div class="toast-message">${message}</div>
+  `;
+  
+  container.appendChild(toast);
+  
+  // อนิเมชันแสดง
+  setTimeout(() => toast.classList.add('active'), 50);
+  
+  // ซ่อนและทำลายหลัง 4 วินาที
+  setTimeout(() => {
+    toast.classList.remove('active');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+/**
+ * เรียกฟังก์ชัน Apps Script ฝั่ง Server ปลอดภัย
+ */
+function callBackend(functionName, args = [], successCallback, errorCallback) {
+  showLoading();
+  
+  // สร้างอินสแตนซ์เรียก google.script.run
+  let runner = google.script.run
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast(err.message, 'danger');
+      if (errorCallback) errorCallback(err);
+      
+      // หากเซสชันหมดอายุ ให้ส่งกลับไปที่หน้า Login
+      if (err.message.indexOf('เซสชันหมดอายุ') !== -1 || err.message.indexOf('กรุณาเข้าสู่ระบบ') !== -1) {
+        logoutLocal();
+      }
+    })
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (successCallback) successCallback(response);
+    });
+    
+  // รันฟังก์ชันตามชื่อและอาร์กิวเมนต์
+  if (args.length === 0) {
+    runner[functionName]();
+  } else if (args.length === 1) {
+    runner[functionName](args[0]);
+  } else if (args.length === 2) {
+    runner[functionName](args[0], args[1]);
+  } else if (args.length === 3) {
+    runner[functionName](args[0], args[1], args[2]);
+  }
+}
+
+/**
+ * ล้างข้อมูลเซสชันฝั่ง Client และแสดงหน้าเข้าสู่ระบบ
+ */
+function logoutLocal() {
+  sessionStorage.removeItem('sessionToken');
+  appState.sessionToken = '';
+  appState.currentUser = null;
+  
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('loginView').style.display = 'flex';
+  
+  // ซ่อนสวิตช์โหมดทดลอง/ปุ่มทดลองหากเซสชันหลุด
+  checkDemoAvailability();
+}
+
+// ==========================================
+// การเริ่มต้นระบบและจัดการสิทธิ์ (Init & Auth)
+// ==========================================
+
+document.addEventListener('DOMContentLoaded', function() {
+  initApp();
+});
+
+/**
+ * เริ่มทำงานแอปพลิเคชัน
+ */
+function initApp() {
+  // บันทึกฟอร์ม Login
+  document.getElementById('loginForm').addEventListener('submit', handleLogin);
+  document.getElementById('demoLoginBtn').addEventListener('click', handleDemoLogin);
+  
+  // จัดการการเปิดหน้าเมนูต่างๆ
+  setupNavigation();
+  
+  // เช็กว่าเปิด/ปิด Demo อยู่หรือไม่ เพื่อแสดงปุ่มที่หน้าล็อกอิน
+  checkDemoAvailability();
+  
+  // หากมีโทเคนอยู่แล้ว ให้ทำการตรวจสอบสิทธิ์อัตโนมัติ
+  if (appState.sessionToken) {
+    verifySessionToken();
+  } else {
+    document.getElementById('loginView').style.display = 'flex';
+    document.getElementById('appView').style.display = 'none';
+    hideLoading();
+  }
+}
+
+/**
+ * ตรวจสอบสถานะการตั้งค่าเปิดใช้งานโหมดทดลองที่หน้าเข้าสู่ระบบ
+ */
+function checkDemoAvailability() {
+  google.script.run
+    .withSuccessHandler(function(enabled) {
+      const demoBtn = document.getElementById('demoLoginBtn');
+      if (enabled) {
+        demoBtn.style.display = 'inline-flex';
+      } else {
+        demoBtn.style.display = 'none';
+      }
+    })
+    .withFailureHandler(function() {
+      document.getElementById('demoLoginBtn').style.display = 'none';
+    })
+    .isDemoEnabled();
+}
+
+/**
+ * จัดการสิทธิ์การส่งเข้าสู่ระบบ (Normal Login)
+ */
+function handleLogin(e) {
+  e.preventDefault();
+  
+  const userEl = document.getElementById('username');
+  const passEl = document.getElementById('password');
+  
+  const username = userEl.value.trim();
+  const password = passEl.value;
+  
+  if (!username || !password) {
+    showToast('กรุณากรอกชื่อผู้ใช้งานและรหัสผ่าน', 'warning');
+    return;
+  }
+  
+  // ป้องกันปุ่มเบิ้ลส่งข้อมูลซ้ำ
+  const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+  loginSubmitBtn.disabled = true;
+  
+  showLoading('กำลังเข้าสู่ระบบ...');
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      loginSubmitBtn.disabled = false;
+      
+      if (response.success) {
+        appState.sessionToken = response.sessionToken;
+        sessionStorage.setItem('sessionToken', response.sessionToken);
+        
+        showToast('เข้าสู่ระบบสำเร็จ ยินดีต้อนรับ', 'success');
+        
+        userEl.value = '';
+        passEl.value = '';
+        
+        verifySessionToken();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      loginSubmitBtn.disabled = false;
+      showToast(err.message, 'danger');
+    })
+    .loginUser(username, password);
+}
+
+/**
+ * เข้าใช้งานด้วยโหมดทดลอง (Demo Login)
+ */
+function handleDemoLogin() {
+  showLoading('กำลังเตรียมโหมดทดลองใช้...');
+  
+  google.script.run
+    .withSuccessHandler(function(response) {
+      hideLoading();
+      if (response.success) {
+        appState.sessionToken = response.sessionToken;
+        sessionStorage.setItem('sessionToken', response.sessionToken);
+        
+        showToast('เข้าสู่ระบบโหมดทดลองใช้งานสำเร็จ', 'success');
+        verifySessionToken();
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast(err.message, 'danger');
+    })
+    .loginDemoUser();
+}
+
+/**
+ * ส่งออกระบบ (Logout)
+ */
+function handleLogout() {
+  if (confirm('คุณต้องการออกจากระบบใช่หรือไม่?')) {
+    callBackend('logoutUser', [appState.sessionToken], function() {
+      logoutLocal();
+      showToast('ออกจากระบบเรียบร้อยแล้ว', 'info');
+    });
+  }
+}
+
+/**
+ * ตรวจสอบความถูกต้องของเซสชันโทเคน
+ */
+function verifySessionToken() {
+  showLoading('กำลังเชื่อมต่อระบบสุขภาพ...');
+  
+  google.script.run
+    .withSuccessHandler(function(user) {
+      appState.currentUser = user;
+      
+      // ดึงค่าตั้งค่าระบบมาก่อนทำงาน
+      google.script.run
+        .withSuccessHandler(function(settings) {
+          appState.settings = {};
+          settings.forEach(item => {
+            appState.settings[item.SettingKey] = item.SettingValue;
+          });
+          
+          hideLoading();
+          
+          // โหลดเมนูและฉายภาพ
+          renderSidebarMenu();
+          applySettingsLabels();
+          
+          document.getElementById('loginView').style.display = 'none';
+          document.getElementById('appView').style.display = 'flex';
+          
+          // กำหนดผู้ใช้ที่แสดงในหน้าจอ
+          document.getElementById('avatarInitial').textContent = user.fullName.substring(0, 1);
+          document.getElementById('userNameDisplay').textContent = user.fullName;
+          document.getElementById('userRoleDisplay').textContent = getRoleThai(user.role);
+          
+          // แสดงป้ายทดลองเมื่อล็อกอินด้วย DEMO
+          const badge = document.getElementById('demoBadgeHeader');
+          if (user.role === 'DEMO') {
+            badge.style.display = 'inline-block';
+          } else {
+            badge.style.display = 'none';
+          }
+          
+          // นำไปยังหน้าแดชบอร์ดเริ่มต้น
+          showPage('dashboard');
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          showToast('ไม่สามารถดึงข้อมูลการตั้งค่าระบบได้', 'danger');
+        })
+        .getSettings(appState.sessionToken);
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      logoutLocal();
+    })
+    .getCurrentUser(appState.sessionToken);
+}
+
+/**
+ * แปลงชื่อบทบาทผู้ใช้ภาษาไทย
+ */
+function getRoleThai(role) {
+  const roles = {
+    'ADMIN': 'ผู้ดูแลระบบ (ADMIN)',
+    'MEDICAL': 'เจ้าหน้าที่พยาบาล (MEDICAL)',
+    'STAFF': 'เจ้าหน้าที่ประจำส่วน (STAFF)',
+    'VIEWER': 'ผู้เข้าดูทั่วไป (VIEWER)',
+    'DEMO': 'ผู้ใช้ทดลองระบบ (DEMO)'
+  };
+  return roles[role] || role;
+}
+
+// ==========================================
+// ส่วนควบคุมเมนูและการแสดงผล (Router & UI)
+// ==========================================
+
+/**
+ * ตั้งค่าการกดคลิกที่ Sidebar เมนู
+ */
+function setupNavigation() {
+  // เมนูปกติ
+  const links = document.querySelectorAll('.sidebar-link[data-page]');
+  links.forEach(link => {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      const pageId = this.getAttribute('data-page');
+      showPage(pageId);
+    });
+  });
+  
+  // ปุ่มออกจากระบบ
+  document.getElementById('logoutLink').addEventListener('click', function(e) {
+    e.preventDefault();
+    handleLogout();
+  });
+  
+  // ปุ่มซ่อนเมนูด้านซ้าย
+  document.getElementById('toggleSidebar').addEventListener('click', function() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('collapsed');
+  });
+  
+  // รองรับ Mobile Sidebar drawer toggle
+  document.getElementById('mobileMenuToggle').addEventListener('click', function() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('mobile-active');
+  });
+  
+  // ปิด drawer เมื่อกดยืดหน้าจอในโมบาย
+  document.getElementById('sidebar').addEventListener('click', function(e) {
+    if (window.innerWidth <= 768 && e.target.closest('.sidebar-link')) {
+      this.classList.remove('mobile-active');
+    }
+  });
+}
+
+/**
+ * ซ่อนหรือแสดงเมนูตามระดับสิทธิ์ของผู้ใช้งาน
+ */
+function renderSidebarMenu() {
+  const role = appState.currentUser.role;
+  
+  const menuConfig = {
+    'ADMIN': ['dashboard', 'recipients', 'visits', 'medicines', 'referrals', 'followups', 'reports', 'users', 'settings', 'logs'],
+    'MEDICAL': ['dashboard', 'recipients', 'visits', 'medicines', 'referrals', 'followups', 'reports'],
+    'STAFF': ['dashboard', 'recipients'],
+    'VIEWER': ['dashboard', 'reports'],
+    'DEMO': ['dashboard', 'recipients', 'visits', 'medicines', 'referrals', 'followups', 'reports']
+  };
+  
+  const allowedPages = menuConfig[role] || ['dashboard'];
+  
+  const items = document.querySelectorAll('.sidebar-item[data-menu]');
+  items.forEach(item => {
+    const key = item.getAttribute('data-menu');
+    if (allowedPages.indexOf(key) !== -1) {
+      item.style.display = 'block';
+    } else {
+      item.style.display = 'none';
+    }
+  });
+  
+  // ซ่อนระบบจัดการประวัติล็อกการใช้งานหากบทบาทไม่ให้เข้า
+  const logsItem = document.querySelector('.sidebar-item[data-menu="logs"]');
+  if (role === 'ADMIN') {
+    if (logsItem) logsItem.style.display = 'block';
+  } else {
+    if (logsItem) logsItem.style.display = 'none';
+  }
+}
+
+/**
+ * อัปเดตคำนิยามผู้รับบริการและข้อมูลหน่วยงานตามที่ ADMIN กำหนดใน Settings
+ */
+function applySettingsLabels() {
+  const settings = appState.settings;
+  if (!settings) return;
+  
+  // เปลี่ยนชื่อระบบและชื่อหน่วยงาน
+  document.getElementById('orgNameDisplay').textContent = settings.ORGANIZATION_NAME || '';
+  document.getElementById('sysNameDisplay').textContent = settings.SYSTEM_NAME || 'ระบบเวชระเบียนสุขภาพ';
+  
+  const recipientLabel = settings.RECIPIENT_LABEL || 'ผู้รับบริการ';
+  const contactLabel = settings.CONTACT_LABEL || 'ผู้ติดต่อ';
+  const groupLabel = settings.GROUP_LABEL || 'กลุ่ม/แผนก';
+  const levelLabel = settings.LEVEL_LABEL || 'ระดับ/แผนกย่อย';
+  
+  // ค้นหาอิลิเมนต์ที่ระบุแอตทริบิวต์และแทนที่เนื้อหา
+  document.querySelectorAll('[data-label-recipient]').forEach(el => {
+    el.textContent = el.textContent.replace(/ผู้รับบริการ/g, recipientLabel);
+  });
+  
+  document.querySelectorAll('[data-label-contact]').forEach(el => {
+    el.textContent = el.textContent.replace(/ผู้ติดต่อ/g, contactLabel);
+  });
+  
+  document.querySelectorAll('[data-label-group]').forEach(el => {
+    el.textContent = el.textContent.replace(/กลุ่ม\/แผนก/g, groupLabel);
+  });
+  
+  document.querySelectorAll('[data-label-level]').forEach(el => {
+    el.textContent = el.textContent.replace(/ระดับ\/แผนกย่อย/g, levelLabel);
+  });
+  
+  // จัดการฟิลด์ประเภทโมดูลจ่ายยา ส่งตัว และติดตามตัว
+  const isMedEnabled = settings.MEDICINE_MODULE_ENABLED === 'TRUE';
+  const isRefEnabled = settings.REFERRAL_MODULE_ENABLED === 'TRUE';
+  const isFolEnabled = settings.FOLLOWUP_MODULE_ENABLED === 'TRUE';
+  
+  document.querySelectorAll('.med-module-only').forEach(el => {
+    el.style.display = isMedEnabled ? '' : 'none';
+  });
+  document.querySelectorAll('.ref-module-only').forEach(el => {
+    el.style.display = isRefEnabled ? '' : 'none';
+  });
+  document.querySelectorAll('.fol-module-only').forEach(el => {
+    el.style.display = isFolEnabled ? '' : 'none';
+  });
+  
+  // ลบแถวเมนูด้านซ้ายตามฟิลด์ตั้งค่าโมดูล
+  if (!isMedEnabled) {
+    const medLink = document.querySelector('.sidebar-item[data-menu="medicines"]');
+    if (medLink) medLink.style.display = 'none';
+  }
+  if (!isRefEnabled) {
+    const refLink = document.querySelector('.sidebar-item[data-menu="referrals"]');
+    if (refLink) refLink.style.display = 'none';
+  }
+  if (!isFolEnabled) {
+    const folLink = document.querySelector('.sidebar-item[data-menu="followups"]');
+    if (folLink) folLink.style.display = 'none';
+  }
+}
+
+/**
+ * แสดงหน้าเพจและเรียกใช้ตัวดึงข้อมูล
+ */
+function showPage(pageId) {
+  // ยกเลิกหน้าเก่า
+  const oldActive = document.querySelector('.sidebar-link.active');
+  if (oldActive) oldActive.classList.remove('active');
+  
+  // ไฮไลต์หน้าใหม่
+  const newActive = document.querySelector(`.sidebar-link[data-page="${pageId}"]`);
+  if (newActive) newActive.classList.add('active');
+  
+  // ซ่อนแผงหน้าเดิมทั้งหมด
+  const pages = document.querySelectorAll('.page-view');
+  pages.forEach(p => p.style.display = 'none');
+  
+  // แสดงหน้าใหม่
+  const activePageEl = document.getElementById(`${pageId}Page`);
+  if (activePageEl) {
+    activePageEl.style.display = 'block';
+  }
+  
+  appState.activePage = pageId;
+  
+  // โหลดหน้าจอเจาะลึก
+  switch (pageId) {
+    case 'dashboard':
+      loadDashboard();
+      break;
+    case 'recipients':
+      loadRecipients();
+      break;
+    case 'visits':
+      loadVisits();
+      break;
+    case 'medicines':
+      loadMedicines();
+      break;
+    case 'referrals':
+      loadReferrals();
+      break;
+    case 'followups':
+      loadFollowUps();
+      break;
+    case 'reports':
+      loadReports();
+      break;
+    case 'users':
+      loadUsers();
+      break;
+    case 'settings':
+      loadSettings();
+      break;
+    case 'logs':
+      loadAuditLogs();
+      break;
+  }
+}
+
+// ==========================================
+// ตัวจัดการหน้า Dashboard (Dashboard Controller)
+// ==========================================
+function loadDashboard() {
+  callBackend('getDashboardData', [appState.sessionToken], function(data) {
+    // อัปเดตการ์ด
+    document.getElementById('dashTodayCount').textContent = data.todayCount;
+    document.getElementById('dashMonthCount').textContent = data.monthCount;
+    document.getElementById('dashTotalRecipients').textContent = data.totalRecipients;
+    document.getElementById('dashObsCount').textContent = data.obsCount;
+    document.getElementById('dashReturnedCount').textContent = data.returnedCount;
+    document.getElementById('dashRefCount').textContent = data.refCount;
+    document.getElementById('dashFollowUpCount').textContent = data.pendingFollowUp;
+    document.getElementById('dashLowStockCount').textContent = data.medLowStock;
+    document.getElementById('dashNearExpiryCount').textContent = data.medNearExpiry;
+    document.getElementById('dashExpiredCount').textContent = data.medExpired;
+    
+    // ตารางประวัติล่าสุด 5 รายการ
+    const tbody = document.getElementById('dashRecentVisitsBody');
+    tbody.innerHTML = '';
+    
+    if (data.latestVisits.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center">ไม่มีข้อมูลการเข้ารับบริการในวันนี้</td></tr>`;
+      return;
+    }
+    
+    data.latestVisits.forEach(v => {
+      tbody.innerHTML += `
+        <tr>
+          <td>${v.id}</td>
+          <td><strong>${v.name}</strong></td>
+          <td>${v.group}</td>
+          <td>${v.complaint}</td>
+          <td>${v.time} น.</td>
+          <td>${getOutcomeBadge(v.outcome)}</td>
+          <td>${v.recordedBy}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function getOutcomeBadge(outcome) {
+  const classes = {
+    'อาการดีขึ้น กลับไปปฏิบัติกิจกรรม': 'badge-success',
+    'พักสังเกตอาการ': 'badge-warning',
+    'ผู้ติดต่อรับกลับ': 'badge-info',
+    'ส่งต่อสถานพยาบาล': 'badge-danger',
+    'เรียกรถฉุกเฉิน': 'badge-danger',
+    'นัดติดตามอาการ': 'badge-secondary'
+  };
+  const cls = classes[outcome] || 'badge-secondary';
+  return `<span class="badge ${cls}">${outcome}</span>`;
+}
+
+// ==========================================
+// ส่วนทะเบียนผู้รับบริการ (Recipients Controller)
+// ==========================================
+
+/**
+ * ดึงและแสดงรายการผู้รับบริการ
+ */
+function loadRecipients() {
+  const searchVal = document.getElementById('recipientSearchInput').value;
+  const typeVal = document.getElementById('recipientTypeFilter').value;
+  const statusVal = document.getElementById('recipientStatusFilter').value;
+  
+  const filters = {
+    search: searchVal,
+    type: typeVal,
+    status: statusVal
+  };
+  
+  callBackend('getServiceRecipients', [appState.sessionToken, filters], function(list) {
+    appState.recipientsList = list;
+    const tbody = document.getElementById('recipientsTableBody');
+    tbody.innerHTML = '';
+    
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center">ไม่พบข้อมูลทะเบียนสุขภาพตามตัวกรอง</td></tr>`;
+      return;
+    }
+    
+    const role = appState.currentUser.role;
+    
+    list.forEach(r => {
+      const isDemoBadge = r.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+      const statusBadge = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
+      
+      // การจำกัดปุ่มสิทธิ์
+      let actionsHtml = `<button class="btn btn-outline btn-sm" onclick="viewRecipientProfile('${r.RecipientID}')"><i class="fas fa-id-card"></i> แฟ้มประวัติ</button>`;
+      
+      if (role !== 'VIEWER') {
+        actionsHtml += ` <button class="btn btn-primary btn-sm" onclick="openEditRecipientModal('${r.RecipientID}')"><i class="fas fa-edit"></i> แก้ไข</button>`;
+      }
+      
+      if (role === 'ADMIN' || role === 'MEDICAL') {
+        actionsHtml += ` <button class="btn btn-secondary btn-sm" onclick="openNewVisitFromRecipient('${r.RecipientID}')"><i class="fas fa-notes-medical"></i> บันทึกตรวจ</button>`;
+      }
+      
+      tbody.innerHTML += `
+        <tr>
+          <td>${isDemoBadge}${r.RecipientID}</td>
+          <td><strong>${r.Title}${r.FirstName} ${r.LastName}</strong></td>
+          <td>${r.Nickname || '-'}</td>
+          <td>${r.RecipientType}</td>
+          <td>${r.Group || '-'} / ${r.Level || '-'}</td>
+          <td>${r.CongenitalDiseases !== '-' && r.CongenitalDiseases ? `<span class="badge badge-danger">${r.CongenitalDiseases}</span>` : '-'}</td>
+          <td>${statusBadge}</td>
+          <td>${actionsHtml}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function filterRecipients() {
+  loadRecipients();
+}
+
+/**
+ * ล้างช่องค้นหา
+ */
+function clearRecipientFilters() {
+  document.getElementById('recipientSearchInput').value = '';
+  document.getElementById('recipientTypeFilter').value = 'All';
+  document.getElementById('recipientStatusFilter').value = 'All';
+  loadRecipients();
+}
+
+/**
+ * เปิดหน้าต่างเพิ่มผู้รับบริการ
+ */
+function openNewRecipientModal() {
+  document.getElementById('recipientModalTitle').textContent = `ลงทะเบียนประวัติผู้รับบริการใหม่`;
+  document.getElementById('recipientForm').reset();
+  document.getElementById('recEditId').value = '';
+  openModal('recipientModal');
+}
+
+/**
+ * เปิดหน้าต่างแก้ไขผู้รับบริการ
+ */
+function openEditRecipientModal(id) {
+  const r = appState.recipientsList.find(x => x.RecipientID === id);
+  if (!r) return;
+  
+  document.getElementById('recipientModalTitle').textContent = `แก้ไขประวัติผู้รับบริการ: ${r.RecipientID}`;
+  document.getElementById('recEditId').value = r.RecipientID;
+  
+  // บันทึกฟิลด์ต่างๆ
+  document.getElementById('recNationalID').value = r.NationalID || '';
+  document.getElementById('recTitle').value = r.Title || 'นาย';
+  document.getElementById('recFirstName').value = r.FirstName || '';
+  document.getElementById('recLastName').value = r.LastName || '';
+  document.getElementById('recNickname').value = r.Nickname || '';
+  document.getElementById('recGender').value = r.Gender || 'ชาย';
+  document.getElementById('recBirthDate').value = r.BirthDate ? new Date(r.BirthDate).toISOString().substring(0, 10) : '';
+  document.getElementById('recRecipientType').value = r.RecipientType || 'พนักงาน/บุคลากร';
+  document.getElementById('recGroup').value = r.Group || '';
+  document.getElementById('recLevel').value = r.Level || '';
+  document.getElementById('recDepartment').value = r.Department || '';
+  document.getElementById('recSubUnit').value = r.SubUnit || '';
+  document.getElementById('recNumberOrOrder').value = r.NumberOrOrder || '';
+  document.getElementById('recBloodType').value = r.BloodType || 'O';
+  document.getElementById('recWeight').value = r.Weight || '';
+  document.getElementById('recHeight').value = r.Height || '';
+  document.getElementById('recCongenitalDiseases').value = r.CongenitalDiseases || '-';
+  document.getElementById('recDrugAllergies').value = r.DrugAllergies || '-';
+  document.getElementById('recFoodAllergies').value = r.FoodAllergies || '-';
+  document.getElementById('recOtherAllergies').value = r.OtherAllergies || '-';
+  document.getElementById('recRegularMedicines').value = r.RegularMedicines || '-';
+  document.getElementById('recHealthConstraints').value = r.HealthConstraints || '-';
+  document.getElementById('recRegularHospital').value = r.RegularHospital || '-';
+  document.getElementById('recContactName').value = r.ContactName || '';
+  document.getElementById('recContactRelationship').value = r.ContactRelationship || '';
+  document.getElementById('recContactPhone').value = r.ContactPhone || '';
+  document.getElementById('recEmergencyContact').value = r.EmergencyContact || '';
+  document.getElementById('recEmergencyPhone').value = r.EmergencyPhone || '';
+  document.getElementById('recNote').value = r.Note || '';
+  document.getElementById('recStatus').value = r.Status || 'Active';
+  
+  openModal('recipientModal');
+}
+
+/**
+ * บันทึกฟอร์มลงทะเบียนประวัติผู้รับบริการ
+ */
+function handleSaveRecipient(e) {
+  e.preventDefault();
+  
+  const recId = document.getElementById('recEditId').value;
+  const firstName = document.getElementById('recFirstName').value.trim();
+  const lastName = document.getElementById('recLastName').value.trim();
+  
+  if (!firstName || !lastName) {
+    showToast('กรุณากรอกชื่อและนามสกุลผู้รับบริการ', 'warning');
+    return;
+  }
+  
+  // ป้องกันปุ่มเบิ้ลกดซ้ำ
+  const submitBtn = document.getElementById('recipientSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    RecipientID: recId,
+    NationalID: document.getElementById('recNationalID').value,
+    Title: document.getElementById('recTitle').value,
+    FirstName: firstName,
+    LastName: lastName,
+    Nickname: document.getElementById('recNickname').value,
+    Gender: document.getElementById('recGender').value,
+    BirthDate: document.getElementById('recBirthDate').value,
+    RecipientType: document.getElementById('recRecipientType').value,
+    Group: document.getElementById('recGroup').value,
+    Level: document.getElementById('recLevel').value,
+    Department: document.getElementById('recDepartment').value,
+    SubUnit: document.getElementById('recSubUnit').value,
+    NumberOrOrder: document.getElementById('recNumberOrOrder').value,
+    BloodType: document.getElementById('recBloodType').value,
+    Weight: parseFloat(document.getElementById('recWeight').value) || 0,
+    Height: parseFloat(document.getElementById('recHeight').value) || 0,
+    CongenitalDiseases: document.getElementById('recCongenitalDiseases').value,
+    DrugAllergies: document.getElementById('recDrugAllergies').value,
+    FoodAllergies: document.getElementById('recFoodAllergies').value,
+    OtherAllergies: document.getElementById('recOtherAllergies').value,
+    RegularMedicines: document.getElementById('recRegularMedicines').value,
+    HealthConstraints: document.getElementById('recHealthConstraints').value,
+    RegularHospital: document.getElementById('recRegularHospital').value,
+    ContactName: document.getElementById('recContactName').value,
+    ContactRelationship: document.getElementById('recContactRelationship').value,
+    ContactPhone: document.getElementById('recContactPhone').value,
+    EmergencyContact: document.getElementById('recEmergencyContact').value,
+    EmergencyPhone: document.getElementById('recEmergencyPhone').value,
+    Note: document.getElementById('recNote').value,
+    Status: document.getElementById('recStatus').value
+  };
+  
+  callBackend('saveServiceRecipient', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('recipientModal');
+    showToast(res.message, 'success');
+    loadRecipients();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+/**
+ * ดูแฟ้มประวัติ (Profile Viewer)
+ */
+function viewRecipientProfile(id) {
+  callBackend('getServiceRecipientById', [appState.sessionToken, id], function(r) {
+    appState.selectedRecipient = r;
+    
+    // ตั้งค่าแสดงผลข้อมูลส่วนตัว
+    document.getElementById('profRecId').textContent = r.RecipientID;
+    document.getElementById('profFullName').textContent = `${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})`;
+    document.getElementById('profType').textContent = r.RecipientType;
+    document.getElementById('profGroup').textContent = `${r.Group || '-'} / ${r.Level || '-'}`;
+    document.getElementById('profSubUnit').textContent = r.SubUnit || '-';
+    document.getElementById('profBlood').textContent = r.BloodType;
+    document.getElementById('profAge').textContent = `${r.Age} ปี (${formatDateThai(r.BirthDate)})`;
+    document.getElementById('profStatus').innerHTML = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
+    
+    // ตั้งค่ากล่องเตือนโรคประจำตัวและแพ้ยาพิเศษ
+    const alertBox = document.getElementById('profileAlertsBox');
+    alertBox.innerHTML = '';
+    
+    if (r.DrugAllergies && r.DrugAllergies !== '-') {
+      alertBox.innerHTML += `
+        <div class="alert-box alert-danger">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div><strong>ประวัติแพ้ยาเฉียบพลัน:</strong> ${r.DrugAllergies}</div>
+        </div>
+      `;
+    }
+    
+    if (r.CongenitalDiseases && r.CongenitalDiseases !== '-') {
+      alertBox.innerHTML += `
+        <div class="alert-box alert-warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div><strong>โรคประจำตัว:</strong> ${r.CongenitalDiseases}</div>
+        </div>
+      `;
+    }
+    
+    // รายละเอียดเวชระเบียนประวัติการรักษา
+    document.getElementById('profCongenital').textContent = r.CongenitalDiseases || '-';
+    document.getElementById('profDrugAllergy').textContent = r.DrugAllergies || '-';
+    document.getElementById('profFoodAllergy').textContent = r.FoodAllergies || '-';
+    document.getElementById('profOtherAllergy').textContent = r.OtherAllergies || '-';
+    document.getElementById('profRegularMed').textContent = r.RegularMedicines || '-';
+    document.getElementById('profConstraint').textContent = r.HealthConstraints || '-';
+    document.getElementById('profContact').textContent = `${r.ContactName} (${r.ContactRelationship}) โทร: ${r.ContactPhone}`;
+    document.getElementById('profEmergency').textContent = `${r.EmergencyContact} โทร: ${r.EmergencyPhone}`;
+    document.getElementById('profNote').textContent = r.Note || '-';
+    
+    // ตารางประวัติการตรวจรักษาก่อนหน้า
+    const tbody = document.getElementById('profileVisitsTableBody');
+    tbody.innerHTML = '';
+    
+    if (!r.visits || r.visits.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center">ไม่พบประวัติการเข้ารับบริการก่อนหน้าในระบบ</td></tr>`;
+    } else {
+      r.visits.forEach(v => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${v.VisitID}</td>
+            <td>${formatDateThai(v.VisitDate)} ${v.TimeIn} น.</td>
+            <td>${v.ChiefComplaint}</td>
+            <td>${v.Outcome}</td>
+            <td>${v.RecordedBy}</td>
+            <td>
+              <button class="btn btn-outline btn-sm" onclick="viewVisitDetails('${v.VisitID}')"><i class="fas fa-eye"></i> ดูใบรักษา</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+    
+    openModal('profileModal');
+  });
+}
+
+// ==========================================
+// ส่วนบันทึกการรักษาและเวชระเบียน (Visits Controller)
+// ==========================================
+
+function loadVisits() {
+  const searchVal = document.getElementById('visitSearchInput').value;
+  const startVal = document.getElementById('visitStartDate').value;
+  const endVal = document.getElementById('visitEndDate').value;
+  const outcomeVal = document.getElementById('visitOutcomeFilter').value;
+  
+  const filters = {
+    search: searchVal,
+    startDate: startVal,
+    endDate: endVal,
+    outcome: outcomeVal
+  };
+  
+  callBackend('getVisits', [appState.sessionToken, filters], function(list) {
+    appState.visitsList = list;
+    const tbody = document.getElementById('visitsTableBody');
+    tbody.innerHTML = '';
+    
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center">ไม่พบข้อมูลการรักษาเวชระเบียน</td></tr>`;
+      return;
+    }
+    
+    const role = appState.currentUser.role;
+    
+    list.forEach(v => {
+      const isDemoBadge = v.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+      const cancelledBadge = v.VisitStatus === 'Cancelled' ? '<span class="badge badge-danger">ยกเลิกรายการ</span>' : '';
+      
+      let actionsHtml = `<button class="btn btn-outline btn-sm" onclick="viewVisitDetails('${v.VisitID}')"><i class="fas fa-file-medical"></i> ดูเวชระเบียน</button>`;
+      
+      if ((role === 'ADMIN' || role === 'MEDICAL') && v.VisitStatus !== 'Cancelled') {
+        actionsHtml += ` <button class="btn btn-danger btn-sm" onclick="handleCancelVisit('${v.VisitID}')"><i class="fas fa-ban"></i> ยกเลิก</button>`;
+      }
+      
+      tbody.innerHTML += `
+        <tr>
+          <td>${isDemoBadge}${v.VisitID} ${cancelledBadge}</td>
+          <td>${formatDateThai(v.VisitDate)}</td>
+          <td><strong>${v.RecipientName}</strong></td>
+          <td>${v.ChiefComplaint}</td>
+          <td>${v.TimeIn} น.</td>
+          <td>${getOutcomeBadge(v.Outcome)}</td>
+          <td>${actionsHtml}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function filterVisits() {
+  loadVisits();
+}
+
+function clearVisitFilters() {
+  document.getElementById('visitSearchInput').value = '';
+  document.getElementById('visitStartDate').value = '';
+  document.getElementById('visitEndDate').value = '';
+  document.getElementById('visitOutcomeFilter').value = 'All';
+  loadVisits();
+}
+
+/**
+ * ค้นหาผู้รับบริการในระบบด่วนก่อนบันทึกรักษา
+ */
+function handleQuickSearchRecipient() {
+  const query = document.getElementById('visitSearchQuery').value.trim();
+  if (query.length < 2) {
+    showToast('กรุณากรอกข้อมูลค้นหาอย่างน้อย 2 อักขระ', 'warning');
+    return;
+  }
+  
+  callBackend('getServiceRecipients', [appState.sessionToken, { search: query, status: 'Active' }], function(list) {
+    const listContainer = document.getElementById('visitRecipientSelectContainer');
+    listContainer.innerHTML = '';
+    
+    if (list.length === 0) {
+      listContainer.innerHTML = `<div class="text-danger p-2">ไม่พบผู้รับบริการที่มีชื่อนี้หรือถูกระงับสิทธิ์การลงทะเบียน</div>`;
+      return;
+    }
+    
+    list.forEach(r => {
+      const congenital = r.CongenitalDiseases && r.CongenitalDiseases !== '-' ? ` | โรคประจำตัว: ${r.CongenitalDiseases}` : '';
+      const drug = r.DrugAllergies && r.DrugAllergies !== '-' ? ` | <span class="text-warning-bold">แพ้ยา: ${r.DrugAllergies}</span>` : '';
+      
+      const item = document.createElement('div');
+      item.className = 'profile-info p-2 mb-2 border rounded cursor-pointer';
+      item.style.cursor = 'pointer';
+      item.innerHTML = `
+        <strong>${r.RecipientID} - ${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})</strong>
+        <span class="text-xs text-muted">${r.RecipientType} | ${r.Group || '-'} / ${r.Level || '-'}${congenital}${drug}</span>
+      `;
+      item.onclick = function() {
+        selectRecipientForVisit(r);
+      };
+      listContainer.appendChild(item);
+    });
+  });
+}
+
+/**
+ * เลือกผู้ป่วยและนำประวัติแพ้ยาขึ้นเตือน
+ */
+function selectRecipientForVisit(r) {
+  document.getElementById('visitSelectedRecipientID').value = r.RecipientID;
+  document.getElementById('visitRecipientNameInput').value = `${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})`;
+  document.getElementById('visitRecipientSelectContainer').innerHTML = '';
+  
+  // แสดงประวัติการแพ้ยากับโรคประจำตัวชัดเจน
+  const alertContainer = document.getElementById('visitAllergyAlertBox');
+  alertContainer.innerHTML = '';
+  
+  if (r.DrugAllergies && r.DrugAllergies !== '-') {
+    alertContainer.innerHTML += `
+      <div class="alert-box alert-danger">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div><strong>โปรดระวัง! คนไข้มีประวัติแพ้ยา:</strong> ${r.DrugAllergies}</div>
+      </div>
+    `;
+    // คัดเกรดค่าแพ้ยากลับไปซิงก์ประวัติ
+    document.getElementById('visitDrugAllergyCheckText').value = r.DrugAllergies;
+  } else {
+    document.getElementById('visitDrugAllergyCheckText').value = '';
+  }
+  
+  if (r.CongenitalDiseases && r.CongenitalDiseases !== '-') {
+    alertContainer.innerHTML += `
+      <div class="alert-box alert-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div><strong>โรคประจำตัว:</strong> ${r.CongenitalDiseases}</div>
+      </div>
+    `;
+  }
+}
+
+/**
+ * เปิดบันทึกเวชระเบียนใหม่ผูกจากปุ่มในหน้าทะเบียนประวัติ
+ */
+function openNewVisitFromRecipient(recId) {
+  closeModal('profileModal');
+  showPage('visits');
+  openNewVisitModal();
+  
+  callBackend('getServiceRecipientById', [appState.sessionToken, recId], function(r) {
+    selectRecipientForVisit(r);
+  });
+}
+
+/**
+ * เปิดหน้าต่างบันทึกรักษาใหม่
+ */
+function openNewVisitModal() {
+  document.getElementById('visitForm').reset();
+  document.getElementById('visitSelectedRecipientID').value = '';
+  document.getElementById('visitAllergyAlertBox').innerHTML = '';
+  document.getElementById('visitRecipientSelectContainer').innerHTML = '';
+  document.getElementById('visitDrugAllergyCheckText').value = '';
+  
+  // ตั้งวันที่และเวลาปัจจุบันแบบไทย
+  const now = new Date();
+  document.getElementById('visitDate').value = now.toISOString().substring(0, 10);
+  document.getElementById('visitTimeIn').value = now.toTimeString().substring(0, 5);
+  
+  // ล้างตารางจ่ายยา
+  document.getElementById('visitMedicinesList').innerHTML = '';
+  
+  // เปิด/ปิด ฟังก์ชันสต็อกยา
+  const isMedEnabled = appState.settings.MEDICINE_MODULE_ENABLED === 'TRUE';
+  if (isMedEnabled) {
+    document.getElementById('visitMedicineSection').style.display = 'block';
+    loadMedicinesDropdown();
+  } else {
+    document.getElementById('visitMedicineSection').style.display = 'none';
+  }
+  
+  openModal('visitModal');
+}
+
+/**
+ * โหลดรายชื่อยาเพื่อขึ้น Dropdown ในตารางจ่ายยา
+ */
+function loadMedicinesDropdown() {
+  callBackend('getMedicines', [appState.sessionToken], function(list) {
+    appState.medicinesList = list;
+    const select = document.getElementById('visitAddMedSelect');
+    select.innerHTML = '<option value="">-- เลือกยาหรือเวชภัณฑ์ --</option>';
+    
+    list.forEach(m => {
+      // คัดกรองยาหมดอายุและไม่ให้ขึ้นแสดงเว้นแต่ admin
+      const isExpired = m.ExpiryDate && new Date(m.ExpiryDate) < new Date();
+      if (m.Status === 'Active' && !isExpired && m.Quantity > 0) {
+        select.innerHTML += `<option value="${m.MedicineID}">${m.MedicineName} (คงเหลือ: ${m.Quantity} ${m.Unit})</option>`;
+      }
+    });
+  });
+}
+
+/**
+ * เพิ่มแถวจ่ายยาลงในเวชระเบียน
+ */
+function handleAddMedicineRow() {
+  const select = document.getElementById('visitAddMedSelect');
+  const qtyEl = document.getElementById('visitAddMedQty');
+  
+  const medId = select.value;
+  const qty = parseInt(qtyEl.value, 10);
+  
+  if (!medId || isNaN(qty) || qty <= 0) {
+    showToast('กรุณาเลือกรายการและจำนวนยาระบุให้ถูกต้อง', 'warning');
+    return;
+  }
+  
+  const m = appState.medicinesList.find(x => x.MedicineID === medId);
+  if (!m) return;
+  
+  // ตรวจสอบประวัติแพ้ยาของคนไข้
+  const allergyList = document.getElementById('visitDrugAllergyCheckText').value;
+  if (allergyList) {
+    const allergyLower = allergyList.toLowerCase();
+    const medNameLower = m.MedicineName.toLowerCase();
+    
+    // ตรวจสอบเบื้องต้น
+    if (allergyLower.indexOf(medNameLower) !== -1 || medNameLower.indexOf(allergyLower) !== -1) {
+      if (!confirm(`คำเตือน: คนไข้มีประวัติแพ้ยาที่คล้ายคลึงกับ "${m.MedicineName}" (ประวัติแพ้ยา: ${allergyList}) ต้องการจ่ายยานี้จริงหรือไม่?`)) {
+        return;
+      }
+    }
+  }
+  
+  if (qty > m.Quantity) {
+    showToast(`ยาในคลังมีไม่เพียงพอ (คงเหลือ ${m.Quantity})`, 'warning');
+    return;
+  }
+  
+  const listContainer = document.getElementById('visitMedicinesList');
+  
+  // ตรวจสอบว่ามียาเดิมอยู่ในลิสต์หรือยัง
+  if (document.getElementById(`dispRow-${medId}`)) {
+    showToast('มีรายการยานี้อยู่แล้วในเวชระเบียน สามารถลบแล้วเพิ่มใหม่ได้', 'warning');
+    return;
+  }
+  
+  const row = document.createElement('div');
+  row.className = 'row border p-2 mb-2 rounded align-items-center';
+  row.id = `dispRow-${medId}`;
+  row.innerHTML = `
+    <div class="col-md-4">
+      <strong>${m.MedicineName}</strong>
+      <input type="hidden" name="dispMedId" value="${medId}">
+    </div>
+    <div class="col-md-2">
+      จำนวน: <input type="number" class="form-control d-inline-block" name="dispQty" value="${qty}" style="width:70px;" readonly> ${m.Unit}
+    </div>
+    <div class="col-md-5">
+      วิธีใช้: <input type="text" class="form-control" name="dispDir" value="${m.Precautions || ''}" placeholder="ระบุขนาดและคำแนะนำการใช้ยา">
+    </div>
+    <div class="col-md-1 text-right">
+      <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('dispRow-${medId}').remove()"><i class="fas fa-trash"></i></button>
+    </div>
+  `;
+  
+  listContainer.appendChild(row);
+  
+  // รีเซ็ตค่า Input ตัวเพิ่ม
+  select.value = '';
+  qtyEl.value = '1';
+}
+
+/**
+ * บันทึกฟอร์มเวชระเบียนเข้าตรวจ
+ */
+function handleSaveVisit(e) {
+  e.preventDefault();
+  
+  const recId = document.getElementById('visitSelectedRecipientID').value;
+  const complaint = document.getElementById('visitChiefComplaint').value.trim();
+  
+  if (!recId) {
+    showToast('กรุณาเลือกผู้รับบริการสุขภาพก่อนทำการบันทึก', 'warning');
+    return;
+  }
+  
+  if (!complaint) {
+    showToast('กรุณาระบุอาการสำคัญเบื้องต้น', 'warning');
+    return;
+  }
+  
+  // ป้องกันปุ่มเบิ้ลกดซ้ำ
+  const submitBtn = document.getElementById('visitSubmitBtn');
+  submitBtn.disabled = true;
+  
+  // ดึงรายการยาที่เลือกจ่าย
+  const dispMedIds = document.getElementsByName('dispMedId');
+  const dispQtys = document.getElementsByName('dispQty');
+  const dispDirs = document.getElementsByName('dispDir');
+  
+  const dispenseMedicines = [];
+  for (let i = 0; i < dispMedIds.length; i++) {
+    dispenseMedicines.push({
+      MedicineID: dispMedIds[i].value,
+      Quantity: parseInt(dispQtys[i].value, 10),
+      Directions: dispDirs[i].value
+    });
+  }
+  
+  const formData = {
+    RecipientID: recId,
+    VisitDate: document.getElementById('visitDate').value,
+    TimeIn: document.getElementById('visitTimeIn').value,
+    TimeOut: document.getElementById('visitTimeOut').value,
+    AccompaniedBy: document.getElementById('visitAccompaniedBy').value,
+    IncidentLocation: document.getElementById('visitIncidentLocation').value,
+    IncidentActivity: document.getElementById('visitIncidentActivity').value,
+    IncidentType: document.getElementById('visitIncidentType').value,
+    ChiefComplaint: complaint,
+    IncidentDetails: document.getElementById('visitIncidentDetails').value,
+    UrgencyLevel: document.getElementById('visitUrgencyLevel').value,
+    Outcome: document.getElementById('visitOutcome').value,
+    
+    // ข้อมูลสัญญาณชีพ
+    vitals: {
+      Temperature: parseFloat(document.getElementById('vitalTemp').value) || '',
+      Weight: parseFloat(document.getElementById('vitalWeight').value) || '',
+      Height: parseFloat(document.getElementById('vitalHeight').value) || '',
+      BloodPressureSystolic: parseInt(document.getElementById('vitalBpSys').value, 10) || '',
+      BloodPressureDiastolic: parseInt(document.getElementById('vitalBpDia').value, 10) || '',
+      Pulse: parseInt(document.getElementById('vitalPulse').value, 10) || '',
+      RespiratoryRate: parseInt(document.getElementById('vitalRr').value, 10) || '',
+      OxygenSaturation: parseInt(document.getElementById('vitalO2').value, 10) || '',
+      PainScore: parseInt(document.getElementById('vitalPain').value, 10) || '0',
+      ConsciousnessLevel: document.getElementById('vitalConscious').value,
+      Note: document.getElementById('vitalNote').value
+    },
+    
+    // ข้อมูลประเมิน
+    assessment: {
+      AssessmentDetails: document.getElementById('assessDetails').value,
+      Diagnosis: document.getElementById('assessDiagnosis').value
+    },
+    
+    // ข้อมูลการดูแล
+    treatment: {
+      TreatmentDetails: document.getElementById('treatDetails').value,
+      Note: document.getElementById('treatNote').value
+    },
+    
+    dispenseMedicines: dispenseMedicines,
+    VisitStatus: 'Closed' // บันทึกเสร็จจะตั้งค่าเป็นเสร็จสิ้นทันที
+  };
+  
+  callBackend('saveVisit', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('visitModal');
+    showToast(res.message, 'success');
+    loadVisits();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+/**
+ * ยกเลิกเวชระเบียนและแจ้งเตือน
+ */
+function handleCancelVisit(id) {
+  if (confirm(`คุณต้องการยกเลิกใบงานเวชระเบียนเลขที่ "${id}" ใช่หรือไม่?\nระบบจะทำการคืนยาเข้าสต็อกให้โดยอัตโนมัติหากมีการสั่งจ่ายไว้`)) {
+    callBackend('cancelVisit', [appState.sessionToken, id], function(res) {
+      showToast(res.message, 'success');
+      loadVisits();
+    });
+  }
+}
+
+/**
+ * ดูเวชระเบียนใบรักษาเจาะลึก
+ */
+function viewVisitDetails(id) {
+  callBackend('getVisitById', [appState.sessionToken, id], function(v) {
+    appState.selectedVisit = v;
+    
+    // โหลดป้ายรายละเอียดในเวชระเบียนพิมพ์
+    document.getElementById('detVisitID').textContent = v.VisitID;
+    document.getElementById('detVisitDate').textContent = `${formatDateThai(v.VisitDate)} เวลา ${v.TimeIn} - ${v.TimeOut || 'ไม่ระบุ'} น.`;
+    document.getElementById('detRecipient').textContent = `${v.RecipientName} (${v.RecipientType})`;
+    document.getElementById('detGroup').textContent = `${v.Group} / ${v.Department || '-'}`;
+    document.getElementById('detComplaint').textContent = v.ChiefComplaint;
+    document.getElementById('detDetails').textContent = v.IncidentDetails || '-';
+    document.getElementById('detOutcome').innerHTML = getOutcomeBadge(v.Outcome);
+    document.getElementById('detRecordedBy').textContent = v.RecordedBy;
+    
+    // จัดการแท็บข้อมูล Vitals
+    const vitalsDiv = document.getElementById('detVitalsSection');
+    vitalsDiv.innerHTML = '';
+    if (v.vitals && v.vitals.length > 0) {
+      const vt = v.vitals[0];
+      
+      // แสดงสัญญาณชีพ
+      const tempWarn = vt.Temperature >= 37.5 ? 'text-warning-bold' : '';
+      const bpWarn = (vt.BloodPressureSystolic >= 140 || vt.BloodPressureSystolic <= 90) ? 'text-warning-bold' : '';
+      const pulseWarn = (vt.Pulse >= 100 || vt.Pulse <= 60) ? 'text-warning-bold' : '';
+      const o2Warn = vt.OxygenSaturation < 95 ? 'text-warning-bold' : '';
+      
+      vitalsDiv.innerHTML = `
+        <div class="row">
+          <div class="col-md-3"><strong>อุณหภูมิ:</strong> <span class="${tempWarn}">${vt.Temperature || '-'} °C</span></div>
+          <div class="col-md-3"><strong>ความดันโลหิต:</strong> <span class="${bpWarn}">${vt.BloodPressureSystolic || '-'}/${vt.BloodPressureDiastolic || '-'} mmHg</span></div>
+          <div class="col-md-3"><strong>อัตราชีพจร:</strong> <span class="${pulseWarn}">${vt.Pulse || '-'} ครั้ง/นาที</span></div>
+          <div class="col-md-3"><strong>ออกซิเจนปลายมือ:</strong> <span class="${o2Warn}">${vt.OxygenSaturation || '-'} %</span></div>
+        </div>
+        <div class="row mt-2">
+          <div class="col-md-3"><strong>น้ำหนัก:</strong> ${vt.Weight || '-'} กก.</div>
+          <div class="col-md-3"><strong>ส่วนสูง:</strong> ${vt.Height || '-'} ซม.</div>
+          <div class="col-md-3"><strong>ระดับความเจ็บปวด (Pain):</strong> ${vt.PainScore || '0'}/10</div>
+          <div class="col-md-3"><strong>ระดับความรู้สึกตัว:</strong> ${vt.ConsciousnessLevel || '-'}</div>
+        </div>
+        <div class="row mt-2">
+          <div class="col-12"><strong>หมายเหตุสัญญาณชีพ:</strong> ${vt.Note || '-'}</div>
+        </div>
+      `;
+    } else {
+      vitalsDiv.innerHTML = '<div class="text-muted">ไม่ได้บันทึกข้อมูลสัญญาณชีพ</div>';
+    }
+    
+    // จัดการข้อมูลประเมินและสั่งการ
+    const assessDiv = document.getElementById('detAssessmentSection');
+    if (v.assessments && v.assessments.length > 0) {
+      assessDiv.innerHTML = `
+        <div><strong>การวินิจฉัยโรคเบื้องต้น:</strong> ${v.assessments[0].Diagnosis || '-'}</div>
+        <div><strong>รายละเอียดการประเมิน:</strong> ${v.assessments[0].AssessmentDetails || '-'}</div>
+      `;
+    } else {
+      assessDiv.innerHTML = '<div class="text-muted">ไม่มีบันทึกประเมินอาการ</div>';
+    }
+    
+    const treatDiv = document.getElementById('detTreatmentSection');
+    if (v.treatments && v.treatments.length > 0) {
+      treatDiv.innerHTML = `
+        <div><strong>การปฐมพยาบาล/รักษา:</strong> ${v.treatments[0].TreatmentDetails || '-'}</div>
+        <div><strong>หมายเหตุ:</strong> ${v.treatments[0].Note || '-'}</div>
+      `;
+    } else {
+      treatDiv.innerHTML = '<div class="text-muted">ไม่มีบันทึกการปฐมพยาบาล</div>';
+    }
+    
+    // จัดการตารางแสดงรายการจ่ายยา
+    const medsDiv = document.getElementById('detMedicinesSection');
+    medsDiv.innerHTML = '';
+    
+    if (v.dispensing && v.dispensing.length > 0) {
+      let tbl = `
+        <table class="table-custom mt-2">
+          <thead>
+            <tr>
+              <th>ชื่อยา/เวชภัณฑ์</th>
+              <th>จำนวน</th>
+              <th>คำอธิบายวิธีใช้</th>
+              <th>สถานะ</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      v.dispensing.forEach(m => {
+        const cls = m.Status === 'Cancelled' ? 'text-danger line-through' : '';
+        tbl += `
+          <tr class="${cls}">
+            <td><strong>${m.MedicineName}</strong></td>
+            <td>${m.Quantity}</td>
+            <td>${m.Directions || '-'}</td>
+            <td>${m.Status === 'Cancelled' ? '<span class="badge badge-danger">ยกเลิก</span>' : '<span class="badge badge-success">ปกติ</span>'}</td>
+          </tr>
+        `;
+      });
+      tbl += '</tbody></table>';
+      medsDiv.innerHTML = tbl;
+    } else {
+      medsDiv.innerHTML = '<div class="text-muted">ไม่มีประวัติการจ่ายยาในเวชระเบียนฉบับนี้</div>';
+    }
+    
+    // จัดการปุ่มโมดูลส่วนส่งต่อและการแจ้งผู้ติดต่อ
+    const actionsBox = document.getElementById('visitDetailsActions');
+    actionsBox.innerHTML = '';
+    
+    const role = appState.currentUser.role;
+    if (role === 'ADMIN' || role === 'MEDICAL') {
+      const isRefEnabled = appState.settings.REFERRAL_MODULE_ENABLED === 'TRUE';
+      const isFolEnabled = appState.settings.FOLLOWUP_MODULE_ENABLED === 'TRUE';
+      
+      actionsBox.innerHTML += `<button class="btn btn-outline" onclick="openContactNotificationModal('${v.VisitID}')"><i class="fas fa-bell"></i> แจ้งเตือนผู้เกี่ยวข้อง</button> `;
+      
+      if (isRefEnabled) {
+        actionsBox.innerHTML += `<button class="btn btn-outline" onclick="openReferralModal('${v.VisitID}')"><i class="fas fa-shipping-fast"></i> ออกใบส่งตัวรักษา</button> `;
+      }
+      if (isFolEnabled) {
+        actionsBox.innerHTML += `<button class="btn btn-outline" onclick="openFollowUpModal('${v.VisitID}')"><i class="fas fa-history"></i> ตั้งนัดติดตามอาการ</button> `;
+      }
+    }
+    
+    openModal('visitDetailsModal');
+  });
+}
+
+// ==========================================
+// ส่วนสต็อกยาและสินค้าคงคลัง (Medicines Controller)
+// ==========================================
+
+function loadMedicines() {
+  callBackend('getMedicines', [appState.sessionToken], function(list) {
+    appState.medicinesList = list;
+    const tbody = document.getElementById('medicinesTableBody');
+    tbody.innerHTML = '';
+    
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center">ไม่พบยาหรือเวชภัณฑ์คงคลัง</td></tr>`;
+      return;
+    }
+    
+    const role = appState.currentUser.role;
+    let warningDays = 90;
+    try {
+      warningDays = parseInt(appState.settings.EXPIRY_WARNING_DAYS, 10) || 90;
+    } catch(e) {}
+    
+    const limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() + warningDays);
+    
+    list.forEach(m => {
+      const isDemoBadge = m.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+      
+      // คำนวณสีแจ้งเตือนจำนวนยาคงเหลือต่ำ
+      let qtyClass = '';
+      if (m.Quantity <= m.AlertThreshold) {
+        qtyClass = 'text-warning-bold';
+      }
+      
+      // ตรวจสอบวันหมดอายุ
+      let expBadge = '-';
+      if (m.ExpiryDate) {
+        const exp = new Date(m.ExpiryDate);
+        if (exp < new Date()) {
+          expBadge = `<span class="badge badge-danger">หมดอายุ (${formatDateThai(m.ExpiryDate)})</span>`;
+        } else if (exp <= limitDate) {
+          expBadge = `<span class="badge badge-warning">ใกล้หมดอายุ (${formatDateThai(m.ExpiryDate)})</span>`;
+        } else {
+          expBadge = formatDateThai(m.ExpiryDate);
+        }
+      }
+      
+      let actions = '';
+      if (role === 'ADMIN' || role === 'MEDICAL') {
+        actions = `
+          <button class="btn btn-primary btn-sm" onclick="openEditMedModal('${m.MedicineID}')"><i class="fas fa-edit"></i> แก้ไข</button>
+          <button class="btn btn-outline btn-sm" onclick="openReceiveStockModal('${m.MedicineID}')"><i class="fas fa-plus"></i> นำเข้า</button>
+          <button class="btn btn-secondary btn-sm" onclick="openAdjustStockModal('${m.MedicineID}')"><i class="fas fa-sliders-h"></i> ปรับยอด</button>
+        `;
+      }
+      
+      tbody.innerHTML += `
+        <tr>
+          <td>${isDemoBadge}${m.MedicineCode}</td>
+          <td><strong>${m.MedicineName}</strong></td>
+          <td>${m.Category}</td>
+          <td>${m.Strength}</td>
+          <td class="${qtyClass}">${m.Quantity} ${m.Unit}</td>
+          <td>${expBadge}</td>
+          <td>${m.StorageLocation || '-'}</td>
+          <td>${m.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ระงับ</span>'}</td>
+          <td>${actions}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function openNewMedModal() {
+  document.getElementById('medModalTitle').textContent = 'เพิ่มทะเบียนยาและเวชภัณฑ์ใหม่';
+  document.getElementById('medForm').reset();
+  document.getElementById('medEditId').value = '';
+  document.getElementById('medQtyGroup').style.display = 'block'; // ให้ใส่ค่าสต็อกเริ่มต้นได้ตอนเพิ่มใหม่
+  openModal('medModal');
+}
+
+function openEditMedModal(id) {
+  const m = appState.medicinesList.find(x => x.MedicineID === id);
+  if (!m) return;
+  
+  document.getElementById('medModalTitle').textContent = `แก้ไขข้อมูลยา: ${m.MedicineCode}`;
+  document.getElementById('medEditId').value = m.MedicineID;
+  document.getElementById('medQtyGroup').style.display = 'none'; // ห้ามแก้ไขตรงๆ ให้ผ่านธุรกรรมปรับสต็อก
+  
+  document.getElementById('medCode').value = m.MedicineCode;
+  document.getElementById('medName').value = m.MedicineName;
+  document.getElementById('medCategory').value = m.Category;
+  document.getElementById('medForm').value = m.Form;
+  document.getElementById('medStrength').value = m.Strength;
+  document.getElementById('medUnit').value = m.Unit;
+  document.getElementById('medAlertThreshold').value = m.AlertThreshold;
+  document.getElementById('medBatchNumber').value = m.BatchNumber || '';
+  document.getElementById('medReceivedDate').value = m.ReceivedDate ? new Date(m.ReceivedDate).toISOString().substring(0, 10) : '';
+  document.getElementById('medExpiryDate').value = m.ExpiryDate ? new Date(m.ExpiryDate).toISOString().substring(0, 10) : '';
+  document.getElementById('medStorageLocation').value = m.StorageLocation || '';
+  document.getElementById('medPrecautions').value = m.Precautions || '';
+  document.getElementById('medStatus').value = m.Status || 'Active';
+  
+  openModal('medModal');
+}
+
+function handleSaveMedicine(e) {
+  e.preventDefault();
+  
+  const medId = document.getElementById('medEditId').value;
+  const name = document.getElementById('medName').value.trim();
+  const code = document.getElementById('medCode').value.trim();
+  
+  if (!name || !code) {
+    showToast('กรุณากรอกรหัสและชื่อยา', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('medSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    MedicineID: medId,
+    MedicineCode: code,
+    MedicineName: name,
+    Category: document.getElementById('medCategory').value,
+    Form: document.getElementById('medForm').value,
+    Strength: document.getElementById('medStrength').value,
+    Unit: document.getElementById('medUnit').value,
+    Quantity: parseInt(document.getElementById('medQty').value, 10) || 0,
+    AlertThreshold: parseInt(document.getElementById('medAlertThreshold').value, 10) || 0,
+    BatchNumber: document.getElementById('medBatchNumber').value,
+    ReceivedDate: document.getElementById('medReceivedDate').value,
+    ExpiryDate: document.getElementById('medExpiryDate').value,
+    StorageLocation: document.getElementById('medStorageLocation').value,
+    Precautions: document.getElementById('medPrecautions').value,
+    Status: document.getElementById('medStatus').value
+  };
+  
+  callBackend('saveMedicine', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('medModal');
+    showToast(res.message, 'success');
+    loadMedicines();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+function openReceiveStockModal(id) {
+  const m = appState.medicinesList.find(x => x.MedicineID === id);
+  if (!m) return;
+  
+  document.getElementById('recStockMedId').value = m.MedicineID;
+  document.getElementById('recStockNameDisplay').textContent = m.MedicineName;
+  document.getElementById('recStockQty').value = '100';
+  document.getElementById('recStockRef').value = '';
+  document.getElementById('recStockNotes').value = '';
+  
+  openModal('receiveStockModal');
+}
+
+function handleReceiveStock(e) {
+  e.preventDefault();
+  
+  const medId = document.getElementById('recStockMedId').value;
+  const qty = parseInt(document.getElementById('recStockQty').value, 10);
+  
+  if (isNaN(qty) || qty <= 0) {
+    showToast('จำนวนนำเข้าสต็อกต้องเป็นตัวเลขมากกว่าศูนย์', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('recStockSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    MedicineID: medId,
+    Quantity: qty,
+    ReferenceID: document.getElementById('recStockRef').value,
+    Notes: document.getElementById('recStockNotes').value
+  };
+  
+  callBackend('receiveMedicineStock', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('receiveStockModal');
+    showToast(res.message, 'success');
+    loadMedicines();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+function openAdjustStockModal(id) {
+  const m = appState.medicinesList.find(x => x.MedicineID === id);
+  if (!m) return;
+  
+  document.getElementById('adjStockMedId').value = m.MedicineID;
+  document.getElementById('adjStockNameDisplay').textContent = `${m.MedicineName} (คงเหลือปัจจุบัน: ${m.Quantity} ${m.Unit})`;
+  document.getElementById('adjStockQty').value = '-10'; // ค่าตัวอย่างลดสต็อก
+  document.getElementById('adjStockNotes').value = '';
+  
+  openModal('adjustStockModal');
+}
+
+function handleAdjustStock(e) {
+  e.preventDefault();
+  
+  const medId = document.getElementById('adjStockMedId').value;
+  const qty = parseInt(document.getElementById('adjStockQty').value, 10);
+  const notes = document.getElementById('adjStockNotes').value.trim();
+  
+  if (qty === 0 || isNaN(qty)) {
+    showToast('จำนวนปรับสต็อกต้องห้ามเป็นศูนย์', 'warning');
+    return;
+  }
+  
+  if (!notes) {
+    showToast('กรุณาระบุเหตุผลในการปรับปรุงสินค้าคงคลัง', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('adjStockSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    MedicineID: medId,
+    Quantity: qty,
+    Notes: notes
+  };
+  
+  callBackend('adjustMedicineStock', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('adjustStockModal');
+    showToast(res.message, 'success');
+    loadMedicines();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+// ==========================================
+// ส่วนการแจ้งเตือนผู้ติดต่อ (Contact Notification)
+// ==========================================
+
+function openContactNotificationModal(visitId) {
+  closeModal('visitDetailsModal');
+  
+  document.getElementById('ntfVisitID').value = visitId;
+  
+  // โหลดค่าของ Visit มาตั้งต้น
+  callBackend('getVisitById', [appState.sessionToken, visitId], function(v) {
+    document.getElementById('ntfRecipientID').value = v.RecipientID;
+    
+    // ตั้งค่าผู้รับข้อมูลตามรายชื่อประวัติ
+    callBackend('getServiceRecipientById', [appState.sessionToken, v.RecipientID], function(rep) {
+      document.getElementById('ntfName').value = rep.ContactName || '';
+      document.getElementById('ntfRelationship').value = rep.ContactRelationship || '';
+      document.getElementById('ntfPhone').value = rep.ContactPhone || '';
+      document.getElementById('ntfChannel').value = 'โทรศัพท์';
+      document.getElementById('ntfIsSuccess').checked = true;
+      document.getElementById('ntfDetails').value = `แจ้งคนไข้ ${rep.Title}${rep.FirstName} ${rep.LastName} เข้าห้องพยาบาลด้วยอาการ: ${v.ChiefComplaint}`;
+      document.getElementById('ntfFeedback').value = '';
+      document.getElementById('ntfWillPickUp').value = 'NO';
+      document.getElementById('ntfPickUpTime').value = '';
+      
+      openModal('contactNotificationModal');
+    });
+  });
+}
+
+function handleSaveContactNotification(e) {
+  e.preventDefault();
+  
+  const visitId = document.getElementById('ntfVisitID').value;
+  const contactName = document.getElementById('ntfName').value.trim();
+  const phone = document.getElementById('ntfPhone').value.trim();
+  
+  if (!contactName || !phone) {
+    showToast('กรุณากรอกชื่อและเบอร์โทรผู้รับแจ้ง', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('ntfSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    VisitID: visitId,
+    RecipientID: document.getElementById('ntfRecipientID').value,
+    ContactName: contactName,
+    Relationship: document.getElementById('ntfRelationship').value,
+    Phone: phone,
+    Channel: document.getElementById('ntfChannel').value,
+    IsSuccess: document.getElementById('ntfIsSuccess').checked,
+    Details: document.getElementById('ntfDetails').value,
+    ContactFeedback: document.getElementById('ntfFeedback').value,
+    WillPickUp: document.getElementById('ntfWillPickUp').value,
+    PickUpTime: document.getElementById('ntfPickUpTime').value
+  };
+  
+  callBackend('saveContactNotification', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('contactNotificationModal');
+    showToast(res.message, 'success');
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+// ==========================================
+// ส่วนใบส่งต่อการตรวจรักษา (Referral Controller)
+// ==========================================
+
+function loadReferrals() {
+  callBackend('getReferrals', [appState.sessionToken], function(list) {
+    const tbody = document.getElementById('referralsTableBody');
+    tbody.innerHTML = '';
+    
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center">ไม่พบรายการส่งตัวรักษาพยาบาล</td></tr>`;
+      return;
+    }
+    
+    list.forEach(r => {
+      const isDemoBadge = r.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+      tbody.innerHTML += `
+        <tr>
+          <td>${isDemoBadge}${r.ReferralID}</td>
+          <td>${r.VisitID}</td>
+          <td>${formatDateThai(r.RecordedAt)}</td>
+          <td><strong>${r.DestinationHospital}</strong></td>
+          <td>${r.Escort || '-'}</td>
+          <td>${r.Status === 'Completed' ? '<span class="badge badge-success">ส่งตัวสำเร็จ</span>' : '<span class="badge badge-warning">รอดำเนินการ</span>'}</td>
+          <td>
+            <button class="btn btn-primary btn-sm" onclick="printReferral('${r.ReferralID}')"><i class="fas fa-print"></i> พิมพ์ใบส่งตัว (A4)</button>
+          </td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function openReferralModal(visitId) {
+  closeModal('visitDetailsModal');
+  
+  document.getElementById('refVisitID').value = visitId;
+  document.getElementById('refEditId').value = '';
+  
+  callBackend('getVisitById', [appState.sessionToken, visitId], function(v) {
+    document.getElementById('refRecipientID').value = v.RecipientID;
+    document.getElementById('refChiefComplaint').value = v.ChiefComplaint;
+    
+    // เตรียมข้อมูลสัญญาณชีพ
+    let vitalsStr = '-';
+    if (v.vitals && v.vitals.length > 0) {
+      const vt = v.vitals[0];
+      vitalsStr = `อุณหภูมิ: ${vt.Temperature}°C, ความดัน: ${vt.BloodPressureSystolic}/${vt.BloodPressureDiastolic} mmHg, ชีพจร: ${vt.Pulse} ครั้ง/นาที`;
+    }
+    document.getElementById('refLatestVitals').value = vitalsStr;
+    
+    // ดึงประวัติการปฐมพยาบาล
+    let careStr = '';
+    if (v.treatments && v.treatments.length > 0) {
+      careStr = v.treatments[0].TreatmentDetails;
+    }
+    document.getElementById('refPreReferralCare').value = careStr;
+    
+    // ประวัติการจ่ายยา
+    let medsStr = '-';
+    if (v.dispensing && v.dispensing.length > 0) {
+      medsStr = v.dispensing.filter(m => m.Status !== 'Cancelled').map(m => `${m.MedicineName} (${m.Quantity})`).join(', ');
+    }
+    document.getElementById('refMedicinesGiven').value = medsStr;
+    
+    // ตั้งค่าเบื้องต้น
+    document.getElementById('refReasonForReferral').value = 'เกินขีดความสามารถการดูแลทางห้องพยาบาล จำเป็นต้องส่งแพทย์ตรวจประเมินเพิ่มเติม';
+    document.getElementById('refDestinationHospital').value = '';
+    document.getElementById('refTravelMethod').value = 'รถยนต์หน่วยงาน';
+    document.getElementById('refEscort').value = 'เจ้าหน้าที่พยาบาลประจำห้องเวชระเบียน';
+    document.getElementById('refContactNotified').checked = true;
+    document.getElementById('refTimeDeparted').value = new Date().toTimeString().substring(0, 5);
+    document.getElementById('refNote').value = '';
+    
+    openModal('referralModal');
+  });
+}
+
+function handleSaveReferral(e) {
+  e.preventDefault();
+  
+  const visitId = document.getElementById('refVisitID').value;
+  const hospital = document.getElementById('refDestinationHospital').value.trim();
+  
+  if (!hospital) {
+    showToast('กรุณาระบุสถานพยาบาลปลายทาง', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('referralSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    ReferralID: document.getElementById('refEditId').value,
+    VisitID: visitId,
+    RecipientID: document.getElementById('refRecipientID').value,
+    ChiefComplaint: document.getElementById('refChiefComplaint').value,
+    LatestVitals: document.getElementById('refLatestVitals').value,
+    PreReferralCare: document.getElementById('refPreReferralCare').value,
+    MedicinesGiven: document.getElementById('refMedicinesGiven').value,
+    ReasonForReferral: document.getElementById('refReasonForReferral').value,
+    DestinationHospital: hospital,
+    TravelMethod: document.getElementById('refTravelMethod').value,
+    Escort: document.getElementById('refEscort').value,
+    ContactNotified: document.getElementById('refContactNotified').checked ? 'YES' : 'NO',
+    TimeDeparted: document.getElementById('refTimeDeparted').value,
+    Note: document.getElementById('refNote').value,
+    Status: 'Completed'
+  };
+  
+  callBackend('saveReferral', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('referralModal');
+    showToast(res.message, 'success');
+    loadReferrals();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+/**
+ * พิมพ์ใบส่งตัวออกหน้าต่างพิมพ์ (A4 Print Engine)
+ */
+function printReferral(id) {
+  callBackend('getReferrals', [appState.sessionToken, { ReferralID: id }], function(list) {
+    const r = list.find(x => x.ReferralID === id);
+    if (!r) return;
+    
+    // ดึงผู้รับบริการด้วยเพื่อดึงข้อมูลเชิงลึก
+    callBackend('getServiceRecipientById', [appState.sessionToken, r.RecipientID], function(rep) {
+      const settings = appState.settings;
+      
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <html>
+        <head>
+          <title>ใบส่งตัวผู้รับบริการ - ${r.ReferralID}</title>
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+          <style>
+            body { font-family: 'Kanit', 'Bai Jamjuree', sans-serif; padding: 40px; color: #1e293b; }
+            .header-print { text-align: center; border-bottom: 2px solid #0d9488; padding-bottom: 20px; margin-bottom: 30px; }
+            .title { font-size: 1.6rem; font-weight: bold; color: #0d9488; margin-bottom: 5px; }
+            .subtitle { font-size: 1rem; color: #64748b; }
+            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
+            .meta-item { font-size: 0.95rem; }
+            .section-title { font-size: 1.1rem; font-weight: bold; border-left: 4px solid #0d9488; padding-left: 10px; margin: 20px 0 10px 0; color: #0f172a; }
+            .content-box { border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; background-color: #f8fafc; font-size: 0.95rem; }
+            .signature-area { margin-top: 50px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+            .signature-line { width: 220px; border-bottom: 1px dashed #64748b; margin-bottom: 10px; height: 40px; }
+            .footer-print { margin-top: 60px; text-align: center; font-size: 0.8rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header-print">
+            <div class="title">${settings.PRINT_HEADER_TEXT || 'บันทึกการส่งต่อเพื่อตรวจรักษาพยาบาล'}</div>
+            <div class="subtitle">${settings.ORGANIZATION_NAME} - ${settings.HEALTH_UNIT_NAME}</div>
+            <div style="margin-top: 8px;"><strong>เลขที่ใบส่งตัว:</strong> ${r.ReferralID} | <strong>วันที่:</strong> ${formatDateThai(r.RecordedAt)}</div>
+          </div>
+          
+          <div class="meta-grid">
+            <div class="meta-item"><strong>ชื่อผู้รับบริการ:</strong> ${rep.Title}${rep.FirstName} ${rep.LastName}</div>
+            <div class="meta-item"><strong>ประเภท/สังกัด:</strong> ${rep.RecipientType} | ${rep.Group || '-'} / ${rep.Level || '-'}</div>
+            <div class="meta-item"><strong>ประวัติการแพ้ยา:</strong> <span style="color:#ef4444;">${rep.DrugAllergies || '-'}</span></div>
+            <div class="meta-item"><strong>โรคประจำตัว:</strong> ${rep.CongenitalDiseases || '-'}</div>
+          </div>
+          
+          <div class="section-title">อาการสำคัญเบื้องต้น</div>
+          <div class="content-box">${r.ChiefComplaint || '-'}</div>
+          
+          <div class="section-title">สัญญาณชีพล่าสุด</div>
+          <div class="content-box">${r.LatestVitals || '-'}</div>
+          
+          <div class="section-title">การปฐมพยาบาลเบื้องต้นที่ได้รับ</div>
+          <div class="content-box">${r.PreReferralCare || '-'}</div>
+          
+          <div class="section-title">ยาที่สั่งจ่ายระหว่างพักสังเกตอาการ</div>
+          <div class="content-box">${r.MedicinesGiven || '-'}</div>
+          
+          <div class="section-title">เหตุผลในการส่งต่อการรักษา</div>
+          <div class="content-box">${r.ReasonForReferral || '-'}</div>
+          
+          <div class="meta-grid" style="margin-top: 25px;">
+            <div class="meta-item"><strong>โรงพยาบาลปลายทาง:</strong> ${r.DestinationHospital}</div>
+            <div class="meta-item"><strong>วิธีการเดินทาง:</strong> ${r.TravelMethod}</div>
+            <div class="meta-item"><strong>ผู้ควบคุมติดตามสุขภาพ:</strong> ${r.Escort}</div>
+            <div class="meta-item"><strong>เวลาออกเดินทาง:</strong> ${r.TimeDeparted} น.</div>
+          </div>
+          
+          <div class="signature-area">
+            <p>ลงชื่อผู้บันทึกและส่งตัว</p>
+            <div class="signature-line"></div>
+            <p>( ${r.RecordedBy} )</p>
+            <p style="font-size:0.85rem;color:#64748b;">เจ้าหน้าที่ประจำห้องรักษาพยาบาล</p>
+          </div>
+          
+          <div class="footer-print">
+            ${settings.PRINT_FOOTER_TEXT || 'เอกสารระบบเวชระเบียนสุขภาพประจำหน่วยงานอัตโนมัติ'}
+          </div>
+          
+          <script>
+            window.onload = function() { window.print(); }
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    });
+  });
+}
+
+// ==========================================
+// ส่วนติดตามอาการผู้ป่วย (Follow Up Controller)
+// ==========================================
+
+function loadFollowUps() {
+  callBackend('getFollowUps', [appState.sessionToken], function(list) {
+    const tbody = document.getElementById('followUpsTableBody');
+    tbody.innerHTML = '';
+    
+    if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center">ไม่พบรายการนัดติดตามสุขภาพ</td></tr>`;
+      return;
+    }
+    
+    list.forEach(f => {
+      const isDemoBadge = f.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+      let badge = `<span class="badge badge-warning">รอดำเนินการ</span>`;
+      if (f.Status === 'Completed') {
+        badge = `<span class="badge badge-success">ติดตามแล้ว</span>`;
+      } else if (f.Status === 'Cancelled') {
+        badge = `<span class="badge badge-danger">ยกเลิกนัด</span>`;
+      }
+      
+      let action = '';
+      if (f.Status === 'Pending') {
+        action = `<button class="btn btn-primary btn-sm" onclick="openUpdateFollowUpModal('${f.FollowUpID}')"><i class="fas fa-notes-medical"></i> บันทึกผลติดตาม</button>`;
+      } else {
+        action = `<span class="text-xs text-muted">เสร็จสิ้นแล้ว</span>`;
+      }
+      
+      tbody.innerHTML += `
+        <tr>
+          <td>${isDemoBadge}${f.FollowUpID}</td>
+          <td>${f.VisitID}</td>
+          <td><strong>${f.RecipientID}</strong></td>
+          <td>${formatDateThai(f.ScheduledDate)}</td>
+          <td>${f.Instructions || '-'}</td>
+          <td>${badge}</td>
+          <td>${f.FollowedUpBy}</td>
+          <td>${action}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function openFollowUpModal(visitId) {
+  closeModal('visitDetailsModal');
+  
+  document.getElementById('folVisitID').value = visitId;
+  document.getElementById('folEditId').value = '';
+  
+  callBackend('getVisitById', [appState.sessionToken, visitId], function(v) {
+    document.getElementById('folRecipientID').value = v.RecipientID;
+    
+    // ตั้งค่าล่วงหน้า
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 3); // ถัดไป 3 วันอัตโนมัติ
+    document.getElementById('folScheduledDate').value = nextDate.toISOString().substring(0, 10);
+    
+    document.getElementById('folInstructions').value = 'ติดตามอาการหลังเข้ารับบริการครบ 3 วัน';
+    document.getElementById('folSymptoms').value = '';
+    document.getElementById('folHospitalOutcome').value = '';
+    document.getElementById('folReturnDate').value = '';
+    document.getElementById('folConstraints').value = '-';
+    document.getElementById('folStatus').value = 'Pending';
+    
+    // ซ่อนแผงกรอกข้อมูลในอดีต (ให้ใส่เฉพาะตอนมาบันทึกผลเท่านั้น)
+    document.getElementById('folResultArea').style.display = 'none';
+    
+    openModal('followUpModal');
+  });
+}
+
+function openUpdateFollowUpModal(id) {
+  callBackend('getFollowUps', [appState.sessionToken], function(list) {
+    const f = list.find(x => x.FollowUpID === id);
+    if (!f) return;
+    
+    document.getElementById('folVisitID').value = f.VisitID;
+    document.getElementById('folEditId').value = f.FollowUpID;
+    document.getElementById('folRecipientID').value = f.RecipientID;
+    document.getElementById('folScheduledDate').value = new Date(f.ScheduledDate).toISOString().substring(0, 10);
+    document.getElementById('folInstructions').value = f.Instructions || '';
+    
+    document.getElementById('folSymptoms').value = f.LatestSymptoms || '';
+    document.getElementById('folHospitalOutcome').value = f.HospitalTreatmentOutcome || '';
+    document.getElementById('folReturnDate').value = f.ReturnToActivityDate ? new Date(f.ReturnToActivityDate).toISOString().substring(0, 10) : '';
+    document.getElementById('folConstraints').value = f.ActivityConstraints || '-';
+    document.getElementById('folStatus').value = 'Completed';
+    
+    // แสดงแผงกรอกข้อมูลสัมภาษณ์
+    document.getElementById('folResultArea').style.display = 'block';
+    
+    openModal('followUpModal');
+  });
+}
+
+function handleSaveFollowUp(e) {
+  e.preventDefault();
+  
+  const submitBtn = document.getElementById('followUpSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    FollowUpID: document.getElementById('folEditId').value,
+    VisitID: document.getElementById('folVisitID').value,
+    RecipientID: document.getElementById('folRecipientID').value,
+    ScheduledDate: document.getElementById('folScheduledDate').value,
+    Status: document.getElementById('folStatus').value,
+    LatestSymptoms: document.getElementById('folSymptoms').value,
+    HospitalTreatmentOutcome: document.getElementById('folHospitalOutcome').value,
+    ReturnToActivityDate: document.getElementById('folReturnDate').value,
+    ActivityConstraints: document.getElementById('folConstraints').value,
+    Instructions: document.getElementById('folInstructions').value
+  };
+  
+  callBackend('saveFollowUp', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('followUpModal');
+    showToast(res.message, 'success');
+    loadFollowUps();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+// ==========================================
+// ส่วนรายงานวิเคราะห์ข้อมูลและสถิติ (Reports Controller)
+// ==========================================
+
+function loadReports() {
+  const type = document.getElementById('reportTypeSelect').value;
+  
+  // โหลดฟังก์ชันพยาบาล
+  const start = document.getElementById('reportStartDate').value;
+  const end = document.getElementById('reportEndDate').value;
+  const recipientType = document.getElementById('reportRecipientTypeFilter').value;
+  
+  const filters = {
+    startDate: start,
+    endDate: end,
+    recipientType: recipientType
+  };
+  
+  callBackend('getReports', [appState.sessionToken, type, filters], function(list) {
+    const tableDiv = document.getElementById('reportTableContainer');
+    tableDiv.innerHTML = '';
+    
+    if (list.length === 0) {
+      tableDiv.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open empty-icon"></i><p>ไม่พบรายการสถิติการรักษาตามช่วงเวลาที่กำหนด</p></div>`;
+      return;
+    }
+    
+    // ออกแบบคอลัมน์ตารางตามประเภทรายงาน
+    let ths = '';
+    let rows = '';
+    
+    if (type === 'medicine_warning') {
+      ths = `<tr><th>รหัสยา</th><th>ชื่อยา/เวชภัณฑ์</th><th>หมวดหมู่</th><th>จำนวนคงคลัง</th><th>หน่วย</th><th>วันหมดอายุ</th><th>เหตุผลเตือน</th><th>สถานะ</th></tr>`;
+      list.forEach(item => {
+        rows += `
+          <tr>
+            <td>${item.MedicineCode}</td>
+            <td><strong>${item.MedicineName}</strong></td>
+            <td>${item.Category}</td>
+            <td>${item.Quantity}</td>
+            <td>${item.Unit}</td>
+            <td>${item.ExpiryDate}</td>
+            <td><span class="text-danger">${item.Reason}</span></td>
+            <td>${item.Status}</td>
+          </tr>
+        `;
+      });
+    } else if (type === 'visit_stats') {
+      ths = `<tr><th>รหัสตรวจ</th><th>วันที่รับบริการ</th><th>เวลา</th><th>ชื่อ-นามสกุล</th><th>ประเภท</th><th>กลุ่ม</th><th>อาการสำคัญ</th><th>ผลการรักษา</th><th>ผู้บันทึก</th></tr>`;
+      list.forEach(item => {
+        rows += `
+          <tr>
+            <td>${item.VisitID}</td>
+            <td>${item.VisitDate}</td>
+            <td>${item.TimeIn} น.</td>
+            <td><strong>${item.RecipientName}</strong></td>
+            <td>${item.RecipientType}</td>
+            <td>${item.Group}</td>
+            <td>${item.ChiefComplaint}</td>
+            <td>${item.Outcome}</td>
+            <td>${item.RecordedBy}</td>
+          </tr>
+        `;
+      });
+    } else if (type === 'frequent_visits') {
+      ths = `<tr><th>รหัสคนไข้</th><th>ชื่อ-นามสกุล</th><th>ประเภทผู้รับบริการ</th><th>กลุ่ม/สังกัด</th><th>จำนวนเข้าห้องพยาบาล (ครั้ง)</th></tr>`;
+      list.forEach(item => {
+        rows += `
+          <tr>
+            <td>${item.id}</td>
+            <td><strong>${item.name}</strong></td>
+            <td>${item.type}</td>
+            <td>${item.group}</td>
+            <td><strong class="text-warning-bold" style="font-size:1.15rem;">${item.count} ครั้ง</strong></td>
+          </tr>
+        `;
+      });
+    } else if (type === 'top_medicines') {
+      ths = `<tr><th>ชื่อยาหรือเวชภัณฑ์</th><th>จำนวนยอดรวมจ่ายออกสะสม</th></tr>`;
+      list.forEach(item => {
+        rows += `
+          <tr>
+            <td><strong>${item.MedicineName}</strong></td>
+            <td><strong style="color:var(--primary); font-size:1.1rem;">${item.TotalDispensed} หน่วย</strong></td>
+          </tr>
+        `;
+      });
+    }
+    
+    tableDiv.innerHTML = `
+      <table class="table-custom">
+        <thead>${ths}</thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  });
+}
+
+function handleExportCsv() {
+  const type = document.getElementById('reportTypeSelect').value;
+  const start = document.getElementById('reportStartDate').value;
+  const end = document.getElementById('reportEndDate').value;
+  const recipientType = document.getElementById('reportRecipientTypeFilter').value;
+  
+  const filters = {
+    startDate: start,
+    endDate: end,
+    recipientType: recipientType
+  };
+  
+  callBackend('exportReportCsv', [appState.sessionToken, type, filters], function(csvContent) {
+    if (!csvContent) {
+      showToast('ไม่มีข้อมูลสำหรับส่งออกไฟล์ CSV', 'warning');
+      return;
+    }
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `report_${type}_${new Date().toISOString().substring(0,10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('ดาวน์โหลดรายงาน CSV เรียบร้อยแล้ว', 'success');
+  });
+}
+
+// ==========================================
+// ส่วนจัดการผู้ใช้งานระบบ (Users Controller)
+// ==========================================
+
+function loadUsers() {
+  callBackend('getUsers', [appState.sessionToken], function(list) {
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '';
+    
+    list.forEach(u => {
+      const isDemoUserBadge = u.IsDemoUser ? '<span class="badge badge-warning">Demo User</span>' : '<span class="badge badge-info">Real User</span>';
+      const statusBadge = u.IsActive ? '<span class="badge badge-success">ใช้งานได้</span>' : '<span class="badge badge-danger">ปิดสิทธิ์</span>';
+      
+      let action = '';
+      if (u.Username !== 'admin') {
+        action = `
+          <button class="btn btn-outline btn-sm" onclick="openChangePasswordModal('${u.Username}')"><i class="fas fa-key"></i> เปลี่ยนรหัส</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleUserStatus('${u.Username}', ${!u.IsActive})">${u.IsActive ? 'ปิดระบบ' : 'เปิดระบบ'}</button>
+        `;
+      } else {
+        action = `<button class="btn btn-outline btn-sm" onclick="openChangePasswordModal('${u.Username}')"><i class="fas fa-key"></i> เปลี่ยนรหัส</button>`;
+      }
+      
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${u.Username}</strong></td>
+          <td>${u.FullName}</td>
+          <td>${getRoleThai(u.Role)}</td>
+          <td>${isDemoUserBadge}</td>
+          <td>${statusBadge}</td>
+          <td>${action}</td>
+        </tr>
+      `;
+    });
+  });
+}
+
+function openNewUserModal() {
+  document.getElementById('userForm').reset();
+  document.getElementById('userUsername').disabled = false;
+  document.getElementById('userPasswordLabel').textContent = 'รหัสผ่านเข้าใช้งาน *';
+  document.getElementById('userPassword').required = true;
+  openModal('userModal');
+}
+
+function handleSaveUser(e) {
+  e.preventDefault();
+  
+  const user = document.getElementById('userUsername').value.trim();
+  const pass = document.getElementById('userPassword').value;
+  const name = document.getElementById('userFullName').value.trim();
+  const role = document.getElementById('userRole').value;
+  
+  if (!user || !name) {
+    showToast('กรุณากรอกข้อมูลส่วนสำคัญให้ครบถ้วน', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('userSubmitBtn');
+  submitBtn.disabled = true;
+  
+  const formData = {
+    Username: user,
+    Password: pass,
+    FullName: name,
+    Role: role,
+    IsActive: true
+  };
+  
+  callBackend('saveUser', [appState.sessionToken, formData], function(res) {
+    submitBtn.disabled = false;
+    closeModal('userModal');
+    showToast(res.message, 'success');
+    loadUsers();
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+function openChangePasswordModal(username) {
+  document.getElementById('chPassUsername').value = username;
+  document.getElementById('chPassNewPassword').value = '';
+  openModal('changePasswordModal');
+}
+
+function handleChangePassword(e) {
+  e.preventDefault();
+  
+  const username = document.getElementById('chPassUsername').value;
+  const newPass = document.getElementById('chPassNewPassword').value;
+  
+  if (newPass.length < 4) {
+    showToast('รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร', 'warning');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('changePasswordSubmitBtn');
+  submitBtn.disabled = true;
+  
+  callBackend('changeUserPassword', [appState.sessionToken, username, newPass], function(res) {
+    submitBtn.disabled = false;
+    closeModal('changePasswordModal');
+    showToast(res.message, 'success');
+  }, function() {
+    submitBtn.disabled = false;
+  });
+}
+
+function toggleUserStatus(username, status) {
+  if (confirm(`คุณแน่ใจว่าต้องการปรับสิทธิ์ใช้งานของบัญชี "${username}" ใช่หรือไม่?`)) {
+    callBackend('updateUserStatus', [appState.sessionToken, username, status], function(res) {
+      showToast(res.message, 'success');
+      loadUsers();
+    });
+  }
+}
+
+// ==========================================
+// ส่วนประวัติการใช้งานและล็อกระบบ (Audit Logs Controller)
+// ==========================================
+
+function loadAuditLogs() {
+  callBackend('getUsers', [appState.sessionToken], function() { // ใช้สำหรับ validate session token
+    // ดึงค่าบันทึกประวัติลึก
+    google.script.run
+      .withSuccessHandler(function(data) {
+        const tbody = document.getElementById('auditLogsTableBody');
+        tbody.innerHTML = '';
+        
+        if (data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center">ไม่พบบันทึกการแก้ไขข้อมูลระบบ</td></tr>`;
+          return;
+        }
+        
+        data.forEach(l => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${l.LogID}</td>
+              <td>${formatDateThai(l.Timestamp)}</td>
+              <td><strong>${l.Username}</strong></td>
+              <td>${l.Role}</td>
+              <td><span class="badge badge-info">${l.ActionType}</span></td>
+              <td>${l.ActionDetails}</td>
+            </tr>
+          `;
+        });
+      })
+      .withFailureHandler(function(err) {
+        showToast('ไม่สามารถโหลดประวัติ Audit Log ได้: ' + err.message, 'danger');
+      })
+      // สร้างดักทางตรงดึงข้อมูล Logs สำหรับ Admin
+      .getSpreadsheet().getSheetByName("AuditLogs").getDataRange().getValues().slice(1)
+      .map(row => ({
+        LogID: row[0],
+        Timestamp: row[1],
+        Username: row[2],
+        Role: row[3],
+        ActionType: row[4],
+        ActionDetails: row[5]
+      })).reverse().slice(0, 200); // ดึง 200 รายการล่าสุด
+  });
+}
+
+// ==========================================
+// ส่วนการตั้งค่าระบบ (Settings Controller)
+// ==========================================
+
+function loadSettings() {
+  callBackend('getSettings', [appState.sessionToken], function(settings) {
+    const listDiv = document.getElementById('settingsListContainer');
+    listDiv.innerHTML = '';
+    
+    // จัดกลุ่มตามการแสดงผล
+    settings.forEach(s => {
+      // สร้างช่องป้อนข้อมูลตามคีย์การตั้งค่า
+      let inputHtml = '';
+      if (s.SettingKey === 'DEMO_ENABLED') {
+        // ใช้ switch input สำหรับ demo
+        const checked = s.SettingValue === 'TRUE' ? 'checked' : '';
+        inputHtml = `
+          <div class="custom-control custom-switch">
+            <input type="checkbox" class="form-check-input" id="setKey-${s.SettingKey}" ${checked} onchange="toggleDemoModeSetting(this)">
+            <label class="form-label d-inline" for="setKey-${s.SettingKey}">เปิดการทำงานโหมดทดลองใช้</label>
+          </div>
+        `;
+      } else if (s.SettingKey === 'MEDICINE_MODULE_ENABLED' || s.SettingKey === 'REFERRAL_MODULE_ENABLED' || s.SettingKey === 'FOLLOWUP_MODULE_ENABLED' || s.SettingKey === 'SHOW_LOGO') {
+        const checked = s.SettingValue === 'TRUE' ? 'checked' : '';
+        inputHtml = `
+          <select class="filter-select" name="settingVal" data-key="${s.SettingKey}">
+            <option value="TRUE" ${s.SettingValue === 'TRUE' ? 'selected' : ''}>เปิดการใช้งาน (TRUE)</option>
+            <option value="FALSE" ${s.SettingValue === 'FALSE' ? 'selected' : ''}>ปิดการใช้งาน (FALSE)</option>
+          </select>
+        `;
+      } else {
+        inputHtml = `<input type="text" class="form-control" name="settingVal" data-key="${s.SettingKey}" value="${s.SettingValue}">`;
+      }
+      
+      listDiv.innerHTML += `
+        <div class="card mb-3 p-3">
+          <div class="row align-items-center">
+            <div class="col-md-5">
+              <strong>${s.SettingKey}</strong>
+              <div class="text-xs text-muted">${s.Description}</div>
+            </div>
+            <div class="col-md-7">
+              ${inputHtml}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    
+    // โหลดสถานะข้อมูลเดโมย่อย
+    updateDemoStats();
+  });
+}
+
+function handleSaveAllSettings() {
+  const inputs = document.getElementsByName('settingVal');
+  const settingsMap = {};
+  
+  for (let i = 0; i < inputs.length; i++) {
+    const key = inputs[i].getAttribute('data-key');
+    const val = inputs[i].value;
+    settingsMap[key] = val;
+  }
+  
+  callBackend('saveSettings', [appState.sessionToken, settingsMap], function(res) {
+    showToast(res.message, 'success');
+    verifySessionToken(); // ดึงประวัติและรีโหลดระบบใหม่
+  });
+}
+
+function handleRestoreDefaultSettings() {
+  if (confirm('คุณต้องการรีเซ็ตการตั้งค่าระบบทั้งหมดกลับเป็นค่าเริ่มต้นใช่หรือไม่?\n(ข้อมูลอื่นในระบบจะไม่สูญหาย เฉพาะหัวข้อการตั้งค่าชื่อหน่วยงาน/รหัสคำนำหน้าจะคืนค่า)')) {
+    callBackend('restoreDefaultSettings', [appState.sessionToken], function(res) {
+      showToast(res.message, 'success');
+      loadSettings();
+    });
+  }
+}
+
+/**
+ * สลับโหมดทดลองใช้ Demo Mode
+ */
+function toggleDemoModeSetting(checkbox) {
+  const isEnabled = checkbox.checked;
+  
+  if (isEnabled) {
+    callBackend('enableDemoMode', [appState.sessionToken], function(res) {
+      showToast(res.message, 'success');
+      loadSettings();
+    }, function() {
+      checkbox.checked = false;
+    });
+  } else {
+    if (confirm('ต้องการปิดโหมดทดลองหรือไม่? ผู้ใช้งานบัญชี Demo จะไม่สามารถเข้าสู่ระบบได้')) {
+      callBackend('disableDemoMode', [appState.sessionToken], function(res) {
+        showToast(res.message, 'success');
+        loadSettings();
+      }, function() {
+        checkbox.checked = true;
+      });
+    } else {
+      checkbox.checked = true;
+    }
+  }
+}
+
+/**
+ * โหลดตัวเลขแถวเดโมแสดง
+ */
+function updateDemoStats() {
+  callBackend('getDemoStatus', [appState.sessionToken], function(res) {
+    const tbody = document.getElementById('demoStatsTableBody');
+    tbody.innerHTML = '';
+    
+    let totalRows = 0;
+    for (let key in res.stats) {
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${key}</strong></td>
+          <td>${res.stats[key]} รายการ</td>
+        </tr>
+      `;
+      totalRows += res.stats[key];
+    }
+    
+    // ควบคุมการโชว์ปุ่ม ล้าง/สร้าง
+    const clearBtn = document.getElementById('clearDemoBtn');
+    const initBtn = document.getElementById('initDemoBtn');
+    
+    if (totalRows > 0) {
+      clearBtn.style.display = 'inline-flex';
+      initBtn.textContent = 'สร้างข้อมูลทดลองทับใหม่';
+    } else {
+      clearBtn.style.display = 'none';
+      initBtn.textContent = 'สร้างข้อมูลทดลองใหม่';
+    }
+  });
+}
+
+/**
+ * สร้างข้อมูลทดลองตัวอย่างใหม่
+ */
+function handleInitDemo() {
+  callBackend('getDemoStatus', [appState.sessionToken], function(res) {
+    let hasData = false;
+    for (let k in res.stats) {
+      if (res.stats[k] > 0) hasData = true;
+    }
+    
+    if (hasData) {
+      if (!confirm('พบว่ามีข้อมูลทดลองเดิมอยู่ในระบบแล้ว การดำเนินการนี้จะล้างข้อมูลเดโมเดิมทั้งหมดก่อนสร้างใหม่\nต้องการดำเนินการต่อใช่หรือไม่?')) {
+        return;
+      }
+      
+      callBackend('clearDemoData', [appState.sessionToken, 'ล้างข้อมูลทดลอง'], function() {
+        createDemoDataRequest();
+      });
+    } else {
+      createDemoDataRequest();
+    }
+  });
+}
+
+function createDemoDataRequest() {
+  callBackend('initializeDemoData', [appState.sessionToken], function(res) {
+    showToast(res.message, 'success');
+    loadSettings();
+  });
+}
+
+/**
+ * ล้างข้อมูลสาธิตระบบ
+ */
+function handleClearDemo() {
+  const confirmText = prompt('คำเตือนสีแดง: กระบวนการนี้จะทำการลบเฉพาะข้อมูล IsDemo = TRUE จากชีตหลักทั้งหมด โดยไม่กระทบข้อมูลจริง\nกรุณาพิมพ์ยืนยันว่า: ล้างข้อมูลทดลอง');
+  
+  if (confirmText === null) return;
+  if (confirmText !== 'ล้างข้อมูลทดลอง') {
+    showToast('คำยืนยันไม่ถูกต้อง ระบบระงับการล้างข้อมูล', 'warning');
+    return;
+  }
+  
+  callBackend('clearDemoData', [appState.sessionToken, confirmText], function(res) {
+    showToast('ล้างข้อมูลสาธิตระบบเรียบร้อยแล้ว', 'success');
+    loadSettings();
+  });
+}
+
+/**
+ * ล้างข้อมูลดำเนินงานจริงทั้งหมด (ADMIN เท่านั้น)
+ */
+function handleClearOperationalData() {
+  const pass = prompt('คำเตือนความปลอดภัยสูงสุด: การกระทำนี้ไม่สามารถย้อนคืนได้ ระบบจะลบข้อมูลดำเนินงานจริงทั้งหมด (IsDemo = FALSE) ออกจากตาราง\nกรุณากรอกรหัสผ่านบัญชี admin เพื่อยืนยัน:');
+  if (!pass) return;
+  
+  const confirmText = prompt('กรุณาพิมพ์ยืนยันว่า: ล้างข้อมูลระบบจริงทั้งหมด');
+  if (confirmText !== 'ล้างข้อมูลระบบจริงทั้งหมด') {
+    showToast('พิมพ์ข้อความยืนยันไม่ถูกต้อง ยกเลิกคำสั่งล้างข้อมูล', 'warning');
+    return;
+  }
+  
+  callBackend('clearOperationalData', [appState.sessionToken, pass, confirmText], function(res) {
+    showToast(res.message, 'success');
+    loadSettings();
+  });
+}
+
+// ==========================================
+// ส่วนควบคุมและเรียกใช้งาน Modal (Modal Helpers)
+// ==========================================
+
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+</script>

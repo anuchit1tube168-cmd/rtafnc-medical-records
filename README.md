@@ -4,6 +4,18 @@
 
 ---
 
+## 🔒 สถาปัตยกรรมความปลอดภัย (Security & Backend Secrets)
+**ระบบปฏิบัติตามมาตรฐานความปลอดภัยสูงสุด (Zero-Secrets in Source Code):**
+* **ไม่มีการเปิดเผยข้อมูลสำคัญ (Tokens, Keys, IDs) ใน GitHub หรือซอร์สโค้ดอย่างเด็ดขาด**
+* ข้อมูลสำคัญทั้งหมดจะถูกจัดเก็บใน **ระบบหลังบ้าน (Google Apps Script Script Properties)** บน Google Cloud:
+  1. `SPREADSHEET_ID` - ไอดีของ Google Sheets ฐานข้อมูล
+  2. `TELEGRAM_BOT_TOKEN` - โทเค็นของ Telegram Bot สำหรับส่งการแจ้งเตือน
+  3. `TELEGRAM_CHAT_ID` - ไอดีห้องแชท Telegram (กลุ่มเจ้าหน้าที่)
+  4. `GOOGLE_FORM_ID` - ไอดีของ Google Form สำหรับรับคำตอบ
+  5. `GOOGLE_SLIDES_TEMPLATE_ID` - ไอดีของ Google Slides เทมเพลตสำหรับสร้างสไลด์รายงาน
+
+---
+
 ## 🌟 จุดเด่นและฟังก์ชันการทำงาน (Key Features)
 
 ### 1. 📊 แดชบอร์ดภาพรวมสุขภาพ (Comprehensive Health Dashboard)
@@ -64,6 +76,19 @@
 
 ---
 
+## ⚙️ วิธีการตั้งค่าระบบหลังบ้าน (Backend Setup)
+
+1. เปิดไปที่ **Google Apps Script Editor**
+2. ไปที่ **Project Settings (รูปฟันเฟือง)** > **Script Properties**
+3. เพิ่มคีย์คอนฟิกูเรชันความลับ:
+   - `SPREADSHEET_ID`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+   - `GOOGLE_FORM_ID`
+   - `GOOGLE_SLIDES_TEMPLATE_ID`
+
+---
+
 ## 🛠️ โครงสร้างไฟล์ในโครงการ
 
 ```text
@@ -72,40 +97,10 @@
 ├── Styles.html         # สไตล์และ CSS ออกแบบตามดีไซน์ทันสมัย (รองรับ Mobile/Tablet/Desktop)
 ├── Scripts.html        # Frontend JavaScript (DOM Controllers, Data Handling, Modals)
 ├── appsscript.json     # Apps Script Manifest (Timezone, WebApp scopes, Libraries)
-├── .clasp.json         # Google Clasp Configuration
+├── .clasp.json.example # ตัวอย่างไฟล์คอนฟิก Clasp
+├── .gitignore          # ละเว้นไฟล์ความลับและไฟล์คอนฟิกเฉพาะเครื่อง
 └── README.md           # รายละเอียดเอกสารโครงการ
 ```
-
----
-
-## 🚀 การติดตั้งและ Deploy (Getting Started)
-
-### 1. โคลนและตั้งค่า Clasp
-```bash
-git clone https://github.com/anuchit1tube168-cmd/rtafnc-medical-records.git
-cd rtafnc-medical-records
-npm install -g @google/clasp
-clasp login
-```
-
-### 2. Push โค้ดขึ้น Google Apps Script
-```bash
-clasp push -f
-```
-
-### 3. Deploy เป็น Web Application
-```bash
-clasp deploy -d "Deploy Production"
-```
-* **Execute as:** `User accessing the web app` หรือ `Me (developer)`
-* **Who has access:** `Anyone with Google account` หรือ `Anyone`
-
----
-
-## 🔒 ความปลอดภัย (Security & Compliance)
-- มีระบบ Audit Log ติดตามทุกกิจกรรม
-- ป้องกันการตัดสต็อกชนกันด้วย `LockService.getScriptLock()`
-- รองรับการเข้ารหัสและการจัดการสิทธิ์ตามระดับผู้ใช้งาน (RBAC)
 
 ---
 © วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ (RTAFNC)

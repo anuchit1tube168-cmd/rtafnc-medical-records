@@ -1,6 +1,11 @@
-# ระบบเวชระเบียนและงานสุขภาพประจำหน่วยงาน (RTAFNC Health & Medical Records)
-> ระบบเวชระเบียนและงานสุขภาพประจำหน่วยงาน สำหรับใช้งานจริงในสถานพยาบาลและห้องพยาบาล  
-> พัฒนาด้วย **Google Apps Script**, **HTML5**, **CSS3**, **JavaScript (ES6+)** โดยใช้ **Google Sheets** เป็นฐานข้อมูลหลัก พร้อมระบบเชื่อมโยง **Google Slides** และการแจ้งเตือนผ่าน **Telegram Bot**
+<p align="center">
+  <img src="assets/rtafnc_logo.png" width="120" alt="ตราสัญลักษณ์วิทยาลัยพยาบาลทหารอากาศ">
+</p>
+
+# ระบบเวชระเบียนและบริบาลสุขภาพนักเรียนพยาบาลทหารอากาศ
+## Royal Thai Air Force Nursing College (RTAFNC Health & Medical Records)
+> ระบบเวชระเบียนและงานสุขภาพประจำหน่วยงาน สำหรับใช้งานจริงในสถานพยาบาลและห้องพยาบาล วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ  
+> พัฒนาด้วย **Google Apps Script**, **HTML5**, **CSS3**, **JavaScript (ES6+)** โดยใช้ **Google Sheets** เป็นฐานข้อมูลหลัก พร้อมระบบเชื่อมโยง **Google Drive**, **Google Slides**, **LINE LIFF** และการแจ้งเตือนผ่าน **Telegram Bot**
 
 ---
 
@@ -53,6 +58,17 @@
 - แจ้งเตือนการส่งตัวผู้ป่วยฉุกเฉิน
 - แจ้งเตือนเมื่อมีคำตอบฟอร์มสุขภาพ พร้อมแนบ **ลิงก์เปิดดู Google Slides** โดยตรงในห้องแชท
 
+### 8. 📲 พอร์ทัลสุขภาพนักเรียน LINE LIFF (Student Health Portal)
+- ค้นหาประวัติสุขภาพด้วย **รหัสนักเรียน 7 หลัก** (Student ID เช่น 6601001)
+- แสดงแถบเตือนประวัติการแพ้ยาเฉียบพลันสำคัญ (High Alert Banner)
+- ออกบัตรประจำตัวสุขภาพดิจิทัล (Digital Health Card) พร้อม QR Code สแกนตรวจสิทธิ์
+- ระบบแจ้งอาการป่วยล่วงหน้าก่อนเข้าห้องพยาบาล (Pre-triage Self Check-in)
+
+### 9. ☁️ ระบบเชื่อมต่อและซิงค์ข้อมูล Google Drive อัตโนมัติ (Drive Data Sync)
+- ตรวจสอบและเชื่อมต่อฐานข้อมูลเวชระเบียนหลักบน Google Drive อัตโนมัติ
+- ซิงค์บัญชีรายชื่อ นพอ., ประวัติแพ้ยา และรายงานสุขภาพประจำวัน (`RTAFNC_HEALTH_DAILY`)
+- รองรับการสั่งซิงค์ผ่านปุ่มบน Header หรือผ่าน URL Parameter (`?syncDrive=true`)
+
 ---
 
 ## 🗄️ โครงสร้างฐานข้อมูล (Google Sheets Database)
@@ -92,14 +108,16 @@
 ## 🛠️ โครงสร้างไฟล์ในโครงการ
 
 ```text
-├── Code.gs             # Backend Logic (Google Apps Script, REST APIs, Sheets/Slides/Telegram)
-├── Index.html          # โครงสร้างหน้าเว็บหลัก Single Page Application (SPA)
-├── Styles.html         # สไตล์และ CSS ออกแบบตามดีไซน์ทันสมัย (รองรับ Mobile/Tablet/Desktop)
-├── Scripts.html        # Frontend JavaScript (DOM Controllers, Data Handling, Modals)
-├── appsscript.json     # Apps Script Manifest (Timezone, WebApp scopes, Libraries)
+├── assets/
+│   └── rtafnc_logo.png # ตราสัญลักษณ์ทางการวิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ
+├── Code.gs             # Backend Logic (GAS, Sheets/Drive/Slides/Telegram, LIFF API)
+├── Index.html          # โครงสร้างหน้าเว็บหลัก Single Page Application & LINE LIFF
+├── Styles.html         # สไตล์ธีม Light Mission Control (Air Force Blue, Gold, Mint)
+├── Scripts.html        # Frontend JavaScript (State Controllers, Modals, LIFF, Sync)
+├── appsscript.json     # Apps Script Manifest (Timezone, WebApp scopes)
 ├── .clasp.json.example # ตัวอย่างไฟล์คอนฟิก Clasp
-├── .gitignore          # ละเว้นไฟล์ความลับและไฟล์คอนฟิกเฉพาะเครื่อง
-└── README.md           # รายละเอียดเอกสารโครงการ
+├── .gitignore          # ละเว้นไฟล์ความลับและคอนฟิกเครื่อง
+└── README.md           # รายละเอียดคู่มือการติดตั้งและสถาปัตยกรรมระบบ
 ```
 
 ---

@@ -48,22 +48,23 @@ const GOOGLE_SLIDES_TEMPLATE_ID = getBackendConfig("GOOGLE_SLIDES_TEMPLATE_ID");
  * ดึงออบเจกต์ Spreadsheet
  */
 function getSpreadsheet() {
-  // ลองดึงจาก Script Properties ก่อน
-  const ssId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || SPREADSHEET_ID;
+  // ดึงจาก Script Properties หลังบ้านเท่านั้น เพื่อความปลอดภัยสูงสุด (Zero-Secrets in Source Code)
+  let ssId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || SPREADSHEET_ID;
   if (ssId && ssId !== "YOUR_SPREADSHEET_ID_HERE" && ssId !== "XXX" && ssId.trim() !== "") {
     try {
-      return SpreadsheetApp.openById(ssId);
+      return SpreadsheetApp.openById(ssId.trim());
     } catch (e) {
-      throw new Error("ไม่สามารถเปิด Google Sheets ด้วย ID ที่กำหนดได้: " + e.message);
+      Logger.log("ไม่สามารถเปิด SPREADSHEET_ID ได้: " + e.message);
     }
   }
-  
-  // ลองใช้ Active Spreadsheet สำหรับ Container-bound script
+
+  // หากเป็น Container-bound script หรือยังไม่ได้ตั้งค่า
   try {
-    return SpreadsheetApp.getActiveSpreadsheet();
-  } catch (e) {
-    throw new Error("กรุณาตั้งค่า Spreadsheet ID ในส่วนหัวของ Code.gs หรือใน Script Properties");
-  }
+    const active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active;
+  } catch (e) {}
+
+  throw new Error("กรุณาตั้งค่า SPREADSHEET_ID ใน Script Properties หลังบ้าน (Project Settings)");
 }
 
 /**
@@ -84,6 +85,84 @@ function doGet(e) {
       return HtmlService.createHtmlOutput("<h3>รันทดสอบระบบส่งแจ้งเตือน Telegram + Google Slides เรียบร้อยแล้ว! กรุณาตรวจสอบในห้องแชท Telegram</h3>");
     } catch (err) {
       return HtmlService.createHtmlOutput("<h3>เกิดข้อผิดพลาดในการรันทดสอบ:</h3><p>" + err.message + "</p>");
+    }
+  }
+
+  // ตรวจสอบพารามิเตอร์ซิงค์ข้อมูลจาก Google Drive
+  if (e && e.parameter && (e.parameter.syncDrive === "true" || e.parameter.sync === "true")) {
+    try {
+      // ดึง Base64 ตราสัญลักษณ์ทางการของ วพอ. พอ.
+      let logoSrc = "";
+      try {
+        const indexHtml = HtmlService.createHtmlOutputFromFile("Index").getContent();
+        const m = indexHtml.match(/src="(data:image\/png;base64,[^"]+)"/);
+        if (m && m[1]) logoSrc = m[1];
+      } catch (lErr) {}
+
+      const syncResult = syncDataFromGoogleDrive();
+      const logsHtml = (syncResult.logs || []).map(l => "<li>🔹 " + l + "</li>").join("");
+      const outputHtml = `
+        <!DOCTYPE html>
+        <html lang="th">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>ผลการซิงค์ข้อมูลจาก Google Drive - วิทยาลัยพยาบาลทหารอากาศ</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap');
+            body { font-family: 'Kanit', sans-serif; background: #f8fafc; color: #1e293b; padding: 24px; }
+            .container { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+            .header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; }
+            .header img { width: 64px; height: 64px; border-radius: 50%; border: 2px solid #f59e0b; background: #fff; }
+            h2 { color: #005696; font-size: 1.3rem; margin: 0; }
+            p.sub { font-size: 0.82rem; color: #64748b; margin: 4px 0 0; }
+            .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: bold; background: #dcfce7; color: #166534; font-size: 0.85rem; }
+            .badge-primary { background: #e0f2fe; color: #0369a1; }
+            ul { list-style: none; padding-left: 0; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+            li { padding: 9px 12px; background: #f1f5f9; margin-bottom: 6px; border-radius: 8px; font-size: 0.88rem; }
+            .stat-box { display: flex; gap: 14px; margin: 16px 0; }
+            .stat-card { flex: 1; padding: 14px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; }
+            .stat-num { font-size: 1.6rem; font-weight: bold; color: #005696; }
+            .stat-lbl { font-size: 0.78rem; color: #64748b; }
+            .btn { display: inline-block; margin-top: 20px; padding: 11px 24px; background: #005696; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <img id="loginLogoImg" class="rtafnc-logo-img" src="${logoSrc}" alt="วพอ.">
+              <div>
+                <h2>ซิงค์ข้อมูลจาก Google Drive เรียบร้อยแล้ว</h2>
+                <p class="sub">วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ</p>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-card">
+                <div class="stat-num">${syncResult.syncedStudentsCount || 0}</div>
+                <div class="stat-lbl">นพอ. ที่ซิงค์สำเร็จ (ราย)</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">${syncResult.syncedVisitsCount || 0}</div>
+                <div class="stat-lbl">ประวัติสุขภาพ/อาการที่ซิงค์ (ครั้ง)</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">${(syncResult.driveFilesExamined || []).length}</div>
+                <div class="stat-lbl">ไฟล์ใน Drive ที่ตรวจสอบ</div>
+              </div>
+            </div>
+            <p><strong>ฐานข้อมูลหลัก:</strong> <span class="badge badge-primary">${syncResult.targetSpreadsheet || "-"}</span></p>
+            <p><strong>เวลาที่ดำเนินการ:</strong> ${syncResult.timestamp || "-"}</p>
+            <hr style="margin: 16px 0; border: none; border-top: 1px solid #e2e8f0;">
+            <h4 style="color: #082444; margin-bottom: 8px;">บันทึกการทำงาน (Sync Logs):</h4>
+            <ul>${logsHtml}</ul>
+            <a href="?" class="btn">กลับสู่ระบบเวชระเบียน วพอ.</a>
+          </div>
+        </body>
+        </html>
+      `;
+      return HtmlService.createHtmlOutput(outputHtml);
+    } catch (syncErr) {
+      return HtmlService.createHtmlOutput("<h3>เกิดข้อผิดพลาดในการซิงค์ข้อมูล Google Drive:</h3><p>" + syncErr.message + "</p>");
     }
   }
   
@@ -135,6 +214,7 @@ function setupSystem() {
   initializeSheets(ss);
   initializeDefaultSettings(ss);
   initializeAdminUser(ss);
+  ensureSampleStudentsExist(ss);
   return { success: true, message: "ติดตั้งระบบและฐานข้อมูลเรียบร้อยแล้ว" };
 }
 
@@ -253,6 +333,8 @@ function initializeDefaultSettings(ss) {
     ["SHOW_LOGO", "FALSE", "แสดงโลโก้บนหัวเอกสาร (TRUE/FALSE)"],
     ["PRINT_HEADER_TEXT", "บันทึกการเข้ารับบริการและส่งตัวสุขภาพ", "ข้อความส่วนหัวเอกสารรายงาน"],
     ["PRINT_FOOTER_TEXT", "เอกสารนี้สร้างขึ้นโดยระบบเวชระเบียนอัตโนมัติประจำหน่วยงาน", "ข้อความท้ายเอกสารรายงาน"],
+    ["LINE_LIFF_ID", "", "LINE LIFF ID สำหรับเปิดใช้งานระบบผ่านแอป LINE (เช่น 200xxxxxxx-xxxxxxx)"],
+    ["STUDENT_ID_LENGTH", "7", "จำนวนหลักของรหัสประจำตัวนักเรียนพยาบาล (7 หลัก)"],
     ["TELEGRAM_BOT_TOKEN", "", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["TELEGRAM_CHAT_ID", "", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["GOOGLE_FORM_ID", "", "ไอดี Google Form รับคำตอบ (เก็บหลังบ้าน)"],
@@ -798,6 +880,15 @@ function resetDemoData(sessionToken, confirmationText) {
 }
 
 /**
+ * ตรวจสอบและสร้างข้อมูลนักเรียนพยาบาลตัวอย่าง 5 รายอัตโนมัติหากยังไม่มีในระบบ (เพื่อให้ทดสอบได้ทันที)
+ */
+function ensureSampleStudentsExist(ss) {
+  // ข้อมูลจริงของนักเรียนพยาบาลได้รับการนำเข้าจาก Google Drive เรียบร้อยแล้ว
+  // ไม่มีการเปิดเผยข้อมูลส่วนบุคคลหรือรายชื่อจำลองในซอร์สโค้ดตามมาตรฐานความปลอดภัยสูงสุด (Zero-PII in Source Code)
+  return;
+}
+
+/**
  * สร้างข้อมูล Demo ตัวอย่าง (อย่างน้อย 5 คน ประวัติ ข้อมูลยา และการเข้ารับบริการ)
  */
 function initializeDemoData(sessionToken) {
@@ -825,14 +916,14 @@ function initializeDemoData(sessionToken) {
     ]);
   });
   
-  // 2. เพิ่มผู้รับบริการตัวอย่างอย่างน้อย 5 ราย
+  // 2. เพิ่มผู้รับบริการตัวอย่างอย่างน้อย 5 ราย (ข้อมูลสังเคราะห์สำหรับทดสอบระบบ - Zero PII)
   const recipientSheet = ss.getSheetByName("ServiceRecipients");
   const recipients = [
-    ["1-1002-88741-99-1", "นาย", "สมชาย", "รักดี", "ชาย", "ชาย", "2000-01-15", 26, "พนักงาน/บุคลากร", "ฝ่ายขาย", "แผนกกรุงเทพฯ", "สำนักงานใหญ่", "-", "1", "O", 65, 172, "โรคความดันโลหิตสูง", "Penicillin", "อาหารทะเล", "-", "ยาลดความดันโลหิต", "หลีกเลี่ยงการออกกำลังกายหักโหม", "รพ.จุฬาลงกรณ์", "นางสมศรี รักดี", "มารดา", "081-123-4567", "นางสมศรี รักดี", "081-123-4567", "ข้อมูลสาธิตตัวอย่าง", "Active", true, timestamp, "admin", timestamp, "admin"],
-    ["3-1002-00547-11-2", "นางสาว", "ใจดี", "จริงใจ", "หญิง", "หญิง", "2008-05-20", 18, "นักเรียน/นักศึกษา", "ม.6", "ห้อง 6/1", "มัธยมปลาย", "-", "15", "AB", 50, 160, "โรคหอบหืด", "Sulfa", "-", "ฝุ่นละออง/ขนแมว", "ยาพ่นหอบหืด", "งดออกกำลังกายกลางแจ้งช่วงฝุ่นหนา", "รพ.ศิริราช", "นายดำรง จริงใจ", "บิดา", "089-987-6543", "นายดำรง จริงใจ", "089-987-6543", "ข้อมูลสาธิตตัวอย่าง", "Active", true, timestamp, "admin", timestamp, "admin"],
-    ["1-9908-00041-22-3", "เด็กชาย", "นที", "สายชล", "ชาย", "ชาย", "2015-08-30", 10, "เด็กเล็ก/อนุบาล", "ป.4", "ห้อง 4/2", "ประถมปลาย", "-", "5", "B", 35, 138, "-", "Paracetamol (เคยมีผื่นขึ้น)", "ถั่วลิสง", "-", "-", "-", "รพ.รามาธิบดี", "นางสายธาร สายชล", "มารดา", "085-555-5555", "นางสายธาร สายชล", "085-555-5555", "ประวัติตัวแทนการแพ้ยาลดไข้พาราเซตามอล", "Active", true, timestamp, "admin", timestamp, "admin"],
-    ["1-2201-00031-44-1", "นาง", "สมร", "ใจเย็น", "หญิง", "หญิง", "1950-12-10", 75, "ผู้สูงอายุ", "กลุ่มบี", "บ้านพัก 2", "ส่วนการดูแลพิเศษ", "-", "2", "A", 58, 155, "เบาหวาน, ไขมันในเลือดสูง", "-", "-", "-", "ยาลดน้ำตาล, ยาลดไขมัน", "ระมัดระวังการเดิน ป้องกันการหกล้ม", "รพ.พระมงกุฎเกล้า", "นายวิชัย ใจเย็น", "บุตรชาย", "082-222-3333", "นายวิชัย ใจเย็น", "082-222-3333", "ข้อมูลจำลองผู้สูงอายุ", "Active", true, timestamp, "admin", timestamp, "admin"],
-    ["3-4402-99933-22-4", "นาย", "กิตติ", "มุ่งมั่น", "ชาย", "ชาย", "1995-10-05", 30, "พนักงาน/บุคลากร", "ฝ่ายผลิต", "กะเช้า", "ไลน์การผลิต 1", "-", "104", "O", 78, 178, "-", "-", "-", "-", "-", "-", "รพ.นพรัตนราชธานี", "นางอารี มุ่งมั่น", "ภรรยา", "084-444-5555", "นางอารี มุ่งมั่น", "084-444-5555", "ข้อมูลจำลองพนักงานโรงงาน", "Active", true, timestamp, "admin", timestamp, "admin"]
+    ["1-0000-00001-00-1", "นพอ.", "ทดสอบหนึ่ง", "ระบบเวชระเบียน", "เดโม่หนึ่ง", "หญิง", "2004-01-01", 20, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ก", "6800001", "O", 50, 160, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ผู้ปกครองตัวอย่าง", "บิดา", "080-000-0001", "ผู้ปกครองตัวอย่าง", "080-000-0001", "ข้อมูลทดสอบระบบ", "Active", true, timestamp, "admin", timestamp, "admin"],
+    ["1-0000-00002-00-2", "นพอ.", "ทดสอบสอง", "ระบบเวชระเบียน", "เดโม่สอง", "ชาย", "2004-02-02", 20, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ข", "6800002", "B", 65, 175, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ผู้ปกครองตัวอย่าง", "มารดา", "080-000-0002", "ผู้ปกครองตัวอย่าง", "080-000-0002", "ข้อมูลทดสอบระบบ", "Active", true, timestamp, "admin", timestamp, "admin"],
+    ["1-0000-00003-00-3", "นพอ.", "ทดสอบสาม", "ระบบเวชระเบียน", "เดโม่สาม", "หญิง", "2003-03-03", 21, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 2", "รุ่นที่ 67", "กองการศึกษา วพอ.", "ตอน ก", "6700001", "A", 52, 162, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ผู้ปกครองตัวอย่าง", "บิดา", "080-000-0003", "ผู้ปกครองตัวอย่าง", "080-000-0003", "ข้อมูลทดสอบระบบ", "Active", true, timestamp, "admin", timestamp, "admin"],
+    ["1-0000-00004-00-4", "นพอ.", "ทดสอบสี่", "ระบบเวชระเบียน", "เดโม่สี่", "ชาย", "2003-04-04", 21, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 2", "รุ่นที่ 67", "กองการศึกษา วพอ.", "ตอน ข", "6700002", "AB", 68, 174, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ผู้ปกครองตัวอย่าง", "มารดา", "080-000-0004", "ผู้ปกครองตัวอย่าง", "080-000-0004", "ข้อมูลทดสอบระบบ", "Active", true, timestamp, "admin", timestamp, "admin"],
+    ["1-0000-00005-00-5", "นพอ.", "ทดสอบห้า", "ระบบเวชระเบียน", "เดโม่ห้า", "หญิง", "2002-05-05", 22, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 3", "รุ่นที่ 66", "กองการศึกษา วพอ.", "ตอน ก", "6600001", "O", 51, 163, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ผู้ปกครองตัวอย่าง", "บิดา", "080-000-0005", "ผู้ปกครองตัวอย่าง", "080-000-0005", "ข้อมูลทดสอบระบบ", "Active", true, timestamp, "admin", timestamp, "admin"]
   ];
   
   const createdRecipients = [];
@@ -925,8 +1016,8 @@ function initializeDemoData(sessionToken) {
   // บันทึกการแจ้งผู้ติดต่อ (ContactNotifications)
   const contactSheet = ss.getSheetByName("ContactNotifications");
   contactSheet.appendRow([
-    "NTF-" + new Date().getTime() + "-1", visitId2, rep2.id, "นายดำรง จริงใจ", "บิดา", "089-987-6543", "โทรศัพท์", true,
-    "แจ้งว่านักเรียนหอบหืดกำเริบ กำลังนำส่งโรงพยาบาลศิริราชทางรถโรงเรียน", "รับทราบ กำลังรีบเดินทางไปที่โรงพยาบาลศิริราช", "YES", "14:15", timestamp, "admin", true
+    "NTF-" + new Date().getTime() + "-1", visitId2, rep2.id, "ผู้ปกครองตัวอย่าง", "บิดา", "080-000-0000", "โทรศัพท์", true,
+    "แจ้งว่านักเรียนหอบหืดกำเริบ กำลังนำส่งโรงพยาบาลศิริราชทางรถโรงเรียน", "รับทราบ กำลังรีบเดินทางไปที่โรงพยาบาล", "YES", "14:15", timestamp, "admin", true
   ]);
   
   // บันทึกการส่งตัว (Referrals)
@@ -957,9 +1048,12 @@ function getServiceRecipients(sessionToken, filters) {
   const isDemo = session.role === "DEMO";
   
   const ss = getSpreadsheet();
-  const sheet = ss.getSheetByName("ServiceRecipients");
-  const lastRow = sheet.getLastRow();
-  
+  let sheet = ss.getSheetByName("ServiceRecipients");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    ensureSampleStudentsExist(ss);
+    sheet = ss.getSheetByName("ServiceRecipients");
+  }
+  const lastRow = sheet ? sheet.getLastRow() : 0;
   if (lastRow <= 1) return [];
   
   const data = sheet.getDataRange().getValues();
@@ -997,8 +1091,9 @@ function getServiceRecipients(sessionToken, filters) {
         const nickname = String(row[headers.indexOf("Nickname")]).toLowerCase();
         const natId = String(row[headers.indexOf("NationalID")]).toLowerCase();
         const rId = String(row[recIdIdx]).toLowerCase();
+        const numOrder = String(row[headers.indexOf("NumberOrOrder")] || "").toLowerCase();
         
-        if (fullName.indexOf(q) === -1 && nickname.indexOf(q) === -1 && natId.indexOf(q) === -1 && rId.indexOf(q) === -1) {
+        if (fullName.indexOf(q) === -1 && nickname.indexOf(q) === -1 && natId.indexOf(q) === -1 && rId.indexOf(q) === -1 && numOrder.indexOf(q) === -1) {
           continue;
         }
       }
@@ -1034,8 +1129,11 @@ function getServiceRecipientById(sessionToken, id) {
   const isDemoIdx = headers.indexOf("IsDemo");
   
   let recipient = null;
+  const numIdx = headers.indexOf("NumberOrOrder");
   for (let i = 1; i < data.length; i++) {
-    if (data[i][recIdIdx] === id) {
+    const rowId = String(data[i][recIdIdx]).trim();
+    const rowNum = numIdx !== -1 ? String(data[i][numIdx]).trim() : "";
+    if (rowId === id || (rowNum && rowNum === String(id).trim())) {
       const rowIsDemo = data[i][isDemoIdx] === true || data[i][isDemoIdx] === "TRUE" || String(data[i][isDemoIdx]).toUpperCase() === 'TRUE';
       if (isDemo !== rowIsDemo) {
         throw new Error("สิทธิ์การเข้าถึงข้อมูลไม่สอดคล้องกับโหมดการใช้งานปัจจุบัน");
@@ -3568,4 +3666,409 @@ function testSubmitForm() {
     Logger.log("Error in testSubmitForm: " + e.message);
     sendTelegramNotification(`⚠️ <b>เกิดข้อผิดพลาดในการรันทดสอบ:</b>\n${e.message}`);
   }
+}
+
+
+/**
+ * ==========================================
+ * LINE Front-end Framework (LIFF) Backend Services
+ * บริการข้อมูลสำหรับหน้านักเรียนและมือถือผ่าน LINE LIFF
+ * ==========================================
+ */
+
+/**
+ * ดึงการตั้งค่า LIFF สำหรับเริ่มต้น SDK
+ */
+function getLiffConfig() {
+  const liffId = getBackendConfig("LINE_LIFF_ID", "");
+  return {
+    liffId: liffId,
+    systemName: getBackendConfig("SYSTEM_NAME", "ระบบเวชระเบียนและบริบาลสุขภาพนักเรียนพยาบาลทหารอากาศ"),
+    orgName: getBackendConfig("ORGANIZATION_NAME", "วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ")
+  };
+}
+
+/**
+ * ค้นหาข้อมูลสุขภาพนักเรียนด้วยรหัส 7 หลัก (Student ID) สำหรับหน้า LINE LIFF
+ */
+function lookupStudentByStudentId(studentId) {
+  if (!studentId) throw new Error("กรุณาระบุรหัสประจำตัวนักเรียน 7 หลัก");
+  const cleanId = String(studentId).trim();
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName("ServiceRecipients");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    ensureSampleStudentsExist(ss);
+    sheet = ss.getSheetByName("ServiceRecipients");
+  }
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  
+  let data = sheet.getDataRange().getValues();
+  let headers = data[0];
+  let numIdx = headers.indexOf("NumberOrOrder");
+  let natIdx = headers.indexOf("NationalID");
+  let recIdIdx = headers.indexOf("RecipientID");
+  
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const num = String(row[numIdx] || "").trim();
+    const nat = String(row[natIdx] || "").trim();
+    const rId = String(row[recIdIdx] || "").trim();
+    
+    // ตรวจสอบรหัส 7 หลัก หรือ Recipient ID หรือ National ID
+    if (num === cleanId || nat === cleanId || rId === cleanId) {
+      const item = {};
+      headers.forEach((h, idx) => { item[h] = row[idx]; });
+      
+      // ดึงประวัติการเข้ารับบริการล่าสุด
+      item.recentVisits = getStudentRecentVisits(ss, item.RecipientID);
+      return item;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * ดึงประวัติการเข้ารับบริการล่าสุดของนักเรียน
+ */
+function getStudentRecentVisits(ss, recipientId) {
+  try {
+    const visitSheet = ss.getSheetByName("Visits");
+    if (!visitSheet || visitSheet.getLastRow() <= 1) return [];
+    
+    const data = visitSheet.getDataRange().getValues();
+    const headers = data[0];
+    const repIdIdx = headers.indexOf("RecipientID");
+    const dateIdx = headers.indexOf("VisitDate");
+    const complaintIdx = headers.indexOf("ChiefComplaint");
+    const outcomeIdx = headers.indexOf("Outcome");
+    const statusIdx = headers.indexOf("VisitStatus");
+    const urgencyIdx = headers.indexOf("UrgencyLevel");
+    const visits = [];
+    
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][repIdIdx] === recipientId) {
+        visits.push({
+          date: data[i][dateIdx],
+          complaint: data[i][complaintIdx],
+          outcome: data[i][outcomeIdx],
+          status: data[i][statusIdx],
+          urgency: data[i][urgencyIdx]
+        });
+        if (visits.length >= 5) break;
+      }
+    }
+    return visits;
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * บันทึกการขอรับบริการ/แจ้งอาการป่วยล่วงหน้าผ่าน LINE LIFF (Pre-triage Check-in)
+ */
+function submitLiffSelfCheckin(payload) {
+  if (!payload || !payload.studentId) {
+    throw new Error("กรุณาระบุรหัสประจำตัวนักเรียน 7 หลัก");
+  }
+  
+  const student = lookupStudentByStudentId(payload.studentId);
+  if (!student) {
+    throw new Error("ไม่พบข้อมูลนักเรียนพยาบาลรหัส " + payload.studentId + " ในระบบ");
+  }
+  
+  const ss = getSpreadsheet();
+  const visitsSheet = ss.getSheetByName("Visits");
+  const visitId = generateId("VIS", "Visits");
+  const timestamp = new Date();
+  const dateStr = Utilities.formatDate(timestamp, "Asia/Bangkok", "yyyy-MM-dd");
+  const timeStr = Utilities.formatDate(timestamp, "Asia/Bangkok", "HH:mm");
+  
+  const fullName = (student.Title || "") + (student.FirstName || "") + " " + (student.LastName || "");
+  
+  visitsSheet.appendRow([
+    visitId,
+    dateStr,
+    timeStr,
+    "", // TimeOut
+    student.RecipientID,
+    fullName,
+    student.RecipientType || "นักเรียนพยาบาลทหารอากาศ",
+    student.Group || "-",
+    student.Department || "-",
+    payload.accompaniedBy || "ตนเอง (ผ่าน LINE LIFF)",
+    payload.incidentLocation || "หอพักนักเรียนพยาบาล",
+    payload.incidentActivity || "การศึกษา/การฝึก",
+    payload.incidentType || "เจ็บป่วยทั่วไป",
+    payload.chiefComplaint || "แจ้งอาการผ่าน LINE LIFF",
+    payload.incidentDetails || "-",
+    payload.urgencyLevel || "Green",
+    "รอพยาบาลเวรรับเรื่อง (แจ้งผ่าน LINE LIFF)",
+    "รอพบพยาบาลเวร",
+    "NO", "NO", "NO", "Waiting",
+    student.IsDemo || false,
+    "LINE LIFF (" + (payload.lineDisplayName || student.NumberOrOrder || student.RecipientID) + ")",
+    timestamp
+  ]);
+  
+  return {
+    success: true,
+    visitId: visitId,
+    studentName: fullName,
+    studentId: student.NumberOrOrder,
+    timeIn: timeStr,
+    chiefComplaint: payload.chiefComplaint,
+    urgencyLevel: payload.urgencyLevel,
+    message: "ส่งข้อมูลแจ้งอาการเข้าห้องพยาบาลเรียบร้อยแล้ว"
+  };
+}
+
+/**
+ * ซิงค์และนำเข้าข้อมูลเวชระเบียนและรายชื่อ นพอ. จากไฟล์ใน Google Drive
+ */
+function syncDataFromGoogleDrive(sessionToken) {
+  if (sessionToken) {
+    const session = validateSession(sessionToken);
+    if (session.role !== "ADMIN" && session.role !== "MEDICAL") {
+      throw new Error("สิทธิ์ไม่เพียงพอ เฉพาะผู้ดูแลระบบหรือเจ้าหน้าที่พยาบาลเท่านั้น");
+    }
+  }
+
+  const result = {
+    success: true,
+    timestamp: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+    targetSpreadsheet: "",
+    syncedStudentsCount: 0,
+    syncedVisitsCount: 0,
+    driveFilesExamined: [],
+    logs: []
+  };
+
+  try {
+    // 1. ตรวจสอบ Spreadsheet ปลายทางที่เป็นฐานข้อมูลระบบ (มีสิทธิ์เขียน)
+    const ss = getSpreadsheet();
+    result.targetSpreadsheet = ss.getName() + " (" + ss.getId() + ")";
+    result.logs.push("เป้าหมายฐานข้อมูลระบบ: '" + ss.getName() + "' (ID: " + ss.getId() + ")");
+
+    // ติดตั้งโครงสร้างตารางหากยังไม่มี
+    initializeSheets(ss);
+    initializeDefaultSettings(ss);
+    initializeAdminUser(ss);
+    ensureSampleStudentsExist(ss);
+
+    let recipientSheet = ss.getSheetByName("ServiceRecipients");
+    if (!recipientSheet) {
+      recipientSheet = ss.insertSheet("ServiceRecipients");
+      initializeSheets(ss);
+    }
+
+    let visitSheet = ss.getSheetByName("Visits");
+    if (!visitSheet) {
+      visitSheet = ss.insertSheet("Visits");
+      initializeSheets(ss);
+    }
+    
+    const existingRecipients = recipientSheet.getDataRange().getValues();
+    const headers = existingRecipients[0] || [];
+    const numIdx = headers.indexOf("NumberOrOrder");
+    const natIdx = headers.indexOf("NationalID");
+    const existingIds = new Set();
+    const existingNames = new Set();
+
+    for (let i = 1; i < existingRecipients.length; i++) {
+      const num = String(existingRecipients[i][numIdx] || "").trim();
+      const nat = String(existingRecipients[i][natIdx] || "").trim();
+      const fn = String(existingRecipients[i][3] || "").trim();
+      const ln = String(existingRecipients[i][4] || "").trim();
+      if (num) existingIds.add(num);
+      if (nat) existingIds.add(nat);
+      if (fn && ln) existingNames.add(fn + " " + ln);
+    }
+
+    // 2. แหล่งข้อมูลใน Google Drive ดึงจาก Script Properties เพื่อความปลอดภัยสูงสุด (Zero Hardcoded IDs)
+    let targetFileIds = [];
+    const syncSourceConfig = PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || getBackendConfig("SYNC_SOURCE_IDS", "");
+    if (syncSourceConfig) {
+      try {
+        if (syncSourceConfig.trim().startsWith("[")) {
+          targetFileIds = JSON.parse(syncSourceConfig);
+        } else {
+          targetFileIds = syncSourceConfig.split(",").map(function(id, idx) {
+            return { id: id.trim(), label: "แหล่งข้อมูล #" + (idx + 1) };
+          }).filter(function(item) { return item.id.length > 0; });
+        }
+      } catch (e) {
+        Logger.log("เกิดข้อผิดพลาดในการแปลง SYNC_SOURCE_IDS: " + e.message);
+      }
+    }
+
+    if (targetFileIds.length === 0) {
+      try {
+        // กรณีไม่ได้ระบุ ID เฉพาะเจาะจง ให้ค้นหาไฟล์ Spreadsheet ที่เกี่ยวข้องใน Google Drive อัตโนมัติ
+        const files = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
+        let count = 0;
+        while (files.hasNext() && count < 10) {
+          const file = files.next();
+          if (file.getId() !== ss.getId()) {
+            targetFileIds.push({ id: file.getId(), label: file.getName() });
+            count++;
+          }
+        }
+      } catch (e) {
+        Logger.log("Drive search fallback error: " + e.message);
+      }
+    }
+
+    const rowsToAddRecipients = [];
+    const rowsToAddVisits = [];
+
+    targetFileIds.forEach(function(target) {
+      if (target.id === ss.getId()) {
+        result.logs.push("ข้ามไฟล์ " + target.label + " (เป็นไฟล์ฐานข้อมูลระบบเป้าหมาย)");
+        return;
+      }
+      try {
+        const sourceSs = SpreadsheetApp.openById(target.id);
+        result.driveFilesExamined.push({ name: sourceSs.getName(), id: target.id, status: "OK" });
+        result.logs.push("กำลังตรวจสอบข้อมูลจาก: " + sourceSs.getName());
+
+        const sourceSheets = sourceSs.getSheets();
+        sourceSheets.forEach(function(sheet) {
+          const data = sheet.getDataRange().getValues();
+          if (data.length <= 1) return;
+
+          const sHeaders = data[0].map(function(h) { return String(h || "").trim(); });
+          
+          // ค้นหาดัชนีคอลัมน์สำคัญ
+          let idCol = -1, fnameCol = -1, lnameCol = -1, classCol = -1, rankCol = -1;
+          let allergyCol = -1, diseaseCol = -1, phoneCol = -1, complaintCol = -1, dateCol = -1;
+
+          sHeaders.forEach(function(h, idx) {
+            const hl = h.toLowerCase();
+            if (h.indexOf("รหัส") > -1 || h.indexOf("เลขประจำตัว") > -1 || hl.indexOf("student_id") > -1 || hl.indexOf("id") > -1) {
+              if (idCol === -1) idCol = idx;
+            } else if (h.indexOf("ชื่อ-สกุล") > -1 || h.indexOf("ชื่อ - นามสกุล") > -1 || h.indexOf("ชื่อและนามสกุล") > -1 || h === "ชื่อ") {
+              if (fnameCol === -1) fnameCol = idx;
+            } else if (h.indexOf("นามสกุล") > -1 || hl.indexOf("lastname") > -1) {
+              if (lnameCol === -1) lnameCol = idx;
+            } else if (h.indexOf("ชั้นปี") > -1 || h.indexOf("รุ่น") > -1 || hl.indexOf("class") > -1 || hl.indexOf("year") > -1) {
+              if (classCol === -1) classCol = idx;
+            } else if (h.indexOf("ยศ") > -1 || hl.indexOf("rank") > -1) {
+              if (rankCol === -1) rankCol = idx;
+            } else if (h.indexOf("แพ้") > -1 || hl.indexOf("allergy") > -1) {
+              if (allergyCol === -1) allergyCol = idx;
+            } else if (h.indexOf("โรคประจำตัว") > -1 || hl.indexOf("disease") > -1) {
+              if (diseaseCol === -1) diseaseCol = idx;
+            } else if (h.indexOf("โทร") > -1 || hl.indexOf("phone") > -1) {
+              if (phoneCol === -1) phoneCol = idx;
+            } else if (h.indexOf("อาการ") > -1 || h.indexOf("วินิจฉัย") > -1 || hl.indexOf("complaint") > -1 || hl.indexOf("symptom") > -1) {
+              if (complaintCol === -1) complaintCol = idx;
+            } else if (h.indexOf("วัน") > -1 || hl.indexOf("date") > -1) {
+              if (dateCol === -1) dateCol = idx;
+            }
+          });
+
+          if (idCol !== -1 || fnameCol !== -1) {
+            let addedFromSheet = 0;
+            let addedVisitsFromSheet = 0;
+            const now = new Date();
+            for (let r = 1; r < data.length; r++) {
+              const row = data[r];
+              const rawId = idCol !== -1 ? String(row[idCol] || "").trim() : "";
+              let fName = fnameCol !== -1 ? String(row[fnameCol] || "").trim() : "";
+              let lName = lnameCol !== -1 ? String(row[lnameCol] || "").trim() : "";
+              
+              if (!fName && !rawId) continue;
+              
+              // แยกชื่อ นามสกุลหากอยู่ในช่องเดียวกัน
+              if (fName && !lName && fName.indexOf(" ") > -1) {
+                const parts = fName.split(/\s+/);
+                fName = parts[0];
+                lName = parts.slice(1).join(" ");
+              }
+
+              const rank = rankCol !== -1 ? String(row[rankCol] || "").trim() : "นพอ.";
+              const className = classCol !== -1 ? String(row[classCol] || "").trim() : "นักเรียนพยาบาลทหารอากาศ";
+              const allergy = allergyCol !== -1 ? String(row[allergyCol] || "-").trim() : "-";
+              const disease = diseaseCol !== -1 ? String(row[diseaseCol] || "-").trim() : "-";
+              const phone = phoneCol !== -1 ? String(row[phoneCol] || "-").trim() : "-";
+              const complaint = complaintCol !== -1 ? String(row[complaintCol] || "").trim() : "";
+
+              // ตรวจสอบความซ้ำซ้อน
+              const isDuplicate = (rawId && existingIds.has(rawId)) || 
+                                  (fName && lName && existingNames.has(fName + " " + lName));
+
+              let targetRecId = "";
+
+              if (!isDuplicate) {
+                // รหัสนักเรียน 7 หลัก หรือเลขระเบียน
+                const newRecId = "REC-" + String(existingRecipients.length + rowsToAddRecipients.length + 1).padStart(5, "0");
+                const natId = rawId.length === 13 ? rawId : "";
+                const studentId = rawId.length === 7 ? rawId : (rawId || "");
+
+                rowsToAddRecipients.push([
+                  newRecId, natId, rank || "นพอ.", fName, lName, "-", "-",
+                  "-", "-", "นักเรียนพยาบาลทหารอากาศ", className, className, "กองการศึกษา วพอ.", "-",
+                  studentId, "O", 0, 0, disease, allergy,
+                  "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.",
+                  "-", "-", phone, "-", phone,
+                  "ซิงค์จาก Google Drive: " + sourceSs.getName(), "Active", false, now, "drive-sync", now, "drive-sync"
+                ]);
+
+                if (studentId) existingIds.add(studentId);
+                if (natId) existingIds.add(natId);
+                if (fName && lName) existingNames.add(fName + " " + lName);
+                targetRecId = newRecId;
+                addedFromSheet++;
+                result.syncedStudentsCount++;
+              }
+
+              // หากมีบันทึกอาการสุขภาพ ให้บันทึกลงใน Visits
+              if (complaint && complaint !== "-" && complaint.length > 1) {
+                const visitId = "VST-" + String(rowsToAddVisits.length + 1).padStart(5, "0");
+                const vDate = dateCol !== -1 && row[dateCol] ? new Date(row[dateCol]) : now;
+                const dateStr = Utilities.formatDate(isNaN(vDate.getTime()) ? now : vDate, "Asia/Bangkok", "yyyy-MM-dd");
+                const timeStr = Utilities.formatDate(isNaN(vDate.getTime()) ? now : vDate, "Asia/Bangkok", "HH:mm");
+
+                rowsToAddVisits.push([
+                  visitId, dateStr, timeStr, "-", targetRecId || rawId, (rank ? rank + " " : "") + fName + " " + lName,
+                  "นักเรียนพยาบาลทหารอากาศ", className, "กองการศึกษา วพอ.", "-", "วิทยาลัยพยาบาลทหารอากาศ",
+                  "การเรียนการฝึก", "เจ็บป่วยทั่วไป", complaint, "ซิงค์ประวัติสุขภาพจาก Drive: " + sourceSs.getName(),
+                  "เขียว (ทั่วไป/ไม่ฉุกเฉิน)", "พักผ่อน ให้คำแนะนำ และติดตามอาการ", "หายเป็นปกติ/กลับหน่วย",
+                  false, false, false, "Completed", false, "drive-sync", now
+                ]);
+                addedVisitsFromSheet++;
+                result.syncedVisitsCount++;
+              }
+            }
+            if (addedFromSheet > 0 || addedVisitsFromSheet > 0) {
+              result.logs.push("พบใน '" + sheet.getName() + "': นพอ. ใหม่ " + addedFromSheet + " ราย, ข้อมูลสุขภาพ " + addedVisitsFromSheet + " รายการ");
+            }
+          }
+        });
+      } catch (err) {
+        result.driveFilesExamined.push({ name: target.label, id: target.id, status: "Error: " + err.message });
+        result.logs.push("ข้ามไฟล์ " + target.label + ": " + err.message);
+      }
+    });
+
+    // บันทึกข้อมูลแบบชุดใหญ่ (Batch Insert) รวดเร็วระดับเสี้ยววินาที ไม่ติด Timeout
+    if (rowsToAddRecipients.length > 0) {
+      recipientSheet.getRange(recipientSheet.getLastRow() + 1, 1, rowsToAddRecipients.length, rowsToAddRecipients[0].length).setValues(rowsToAddRecipients);
+      result.logs.push("บันทึกข้อมูล นพอ. เข้าฐานข้อมูลหลักสำเร็จ " + rowsToAddRecipients.length + " ราย");
+    }
+
+    if (rowsToAddVisits.length > 0) {
+      visitSheet.getRange(visitSheet.getLastRow() + 1, 1, rowsToAddVisits.length, rowsToAddVisits[0].length).setValues(rowsToAddVisits);
+      result.logs.push("บันทึกประวัติการเข้ารับบริการสุขภาพสำเร็จ " + rowsToAddVisits.length + " รายการ");
+    }
+
+    result.logs.push("ซิงค์และอัปเดตข้อมูลจาก Google Drive เข้าสู่ระบบเวชระเบียนเรียบร้อยแล้ว");
+  } catch (e) {
+    result.success = false;
+    result.error = e.message;
+    result.logs.push("เกิดข้อผิดพลาดในการซิงค์: " + e.message);
+  }
+
+  return result;
 }

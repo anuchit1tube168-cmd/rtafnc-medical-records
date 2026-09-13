@@ -124,6 +124,10 @@ document.addEventListener('DOMContentLoaded', function() {
  * เริ่มทำงานแอปพลิเคชัน
  */
 function initApp() {
+  // ตรวจสอบว่าเปิดผ่าน LINE LIFF หรือมีพารามิเตอร์ LIFF หรือไม่
+  const isLiff = checkLiffModeOnLoad();
+  initLiffSdk();
+
   // บันทึกฟอร์ม Login
   document.getElementById('loginForm').addEventListener('submit', handleLogin);
   document.getElementById('demoLoginBtn').addEventListener('click', handleDemoLogin);
@@ -506,6 +510,27 @@ function openNewReferralModal() {
   navigateTo('referrals');
 }
 
+/**
+ * เรียกฟังก์ชันซิงค์ข้อมูลจาก Google Drive เข้าสู่ระบบ
+ */
+function triggerDriveSync() {
+  if (!confirm('ต้องการซิงค์และนำเข้าข้อมูลเวชระเบียนและรายชื่อ นพอ. จาก Google Drive ใช่หรือไม่?')) return;
+  showLoading();
+  callBackend('syncDataFromGoogleDrive', [appState.sessionToken], function(res) {
+    hideLoading();
+    if (res.success) {
+      showToast('ซิงค์ข้อมูลจาก Google Drive สำเร็จ! นำเข้า นพอ. ' + (res.syncedStudentsCount || 0) + ' ราย', 'success');
+      loadRecipients();
+      loadDashboard();
+    } else {
+      showToast(res.error || 'เกิดข้อผิดพลาดในการซิงค์', 'danger');
+    }
+  }, function(err) {
+    hideLoading();
+    showToast(err.message, 'danger');
+  });
+}
+
 function showPage(pageId) {
   // ยกเลิกหน้าเก่า
   const oldActive = document.querySelector('.sidebar-link.active');
@@ -668,9 +693,10 @@ function loadRecipients() {
         actionsHtml += ` <button class="btn btn-secondary btn-sm" onclick="openNewVisitFromRecipient('${r.RecipientID}')"><i class="fas fa-notes-medical"></i> บันทึกตรวจ</button>`;
       }
       
+      const studentIdBadge = r.NumberOrOrder ? `<span class="badge-student-id"><i class="fas fa-id-badge"></i> ${r.NumberOrOrder}</span><br>` : '';
       tbody.innerHTML += `
         <tr>
-          <td>${isDemoBadge}${r.RecipientID}</td>
+          <td>${isDemoBadge}${studentIdBadge}<small class="text-muted">${r.RecipientID}</small></td>
           <td><strong>${r.Title}${r.FirstName} ${r.LastName}</strong></td>
           <td>${r.Nickname || '-'}</td>
           <td>${r.RecipientType}</td>
@@ -978,16 +1004,22 @@ function handleQuickSearchRecipient() {
       return;
     }
     
+    if (list.length === 1 && /^\d{7}$/.test(query)) {
+      selectRecipientForVisit(list[0]);
+      return;
+    }
+    
     list.forEach(r => {
       const congenital = r.CongenitalDiseases && r.CongenitalDiseases !== '-' ? ` | โรคประจำตัว: ${r.CongenitalDiseases}` : '';
       const drug = r.DrugAllergies && r.DrugAllergies !== '-' ? ` | <span class="text-warning-bold">แพ้ยา: ${r.DrugAllergies}</span>` : '';
+      const studentIdBadge = r.NumberOrOrder ? `<span class="badge-student-id mr-1">${r.NumberOrOrder}</span> ` : '';
       
       const item = document.createElement('div');
       item.className = 'profile-info p-2 mb-2 border rounded cursor-pointer';
       item.style.cursor = 'pointer';
       item.innerHTML = `
-        <strong>${r.RecipientID} - ${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})</strong>
-        <span class="text-xs text-muted">${r.RecipientType} | ${r.Group || '-'} / ${r.Level || '-'}${congenital}${drug}</span>
+        <strong>${studentIdBadge}${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})</strong>
+        <span class="text-xs text-muted">รหัสระบบ: ${r.RecipientID} | ${r.RecipientType} | ${r.Group || '-'} / ${r.Level || '-'}${congenital}${drug}</span>
       `;
       item.onclick = function() {
         selectRecipientForVisit(r);
@@ -2551,5 +2583,406 @@ function openModal(id) {
 
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
+}
+
+
+/**
+ * ==========================================
+ * LINE Front-end Framework (LIFF) Controller
+ * จัดการหน้าจอสำหรับ นพอ. ผ่านแอป LINE
+ * ==========================================
+ */
+
+let liffCurrentStudent = null;
+let liffConfigData = null;
+
+function checkLiffModeOnLoad() {
+  const params = new URLSearchParams(window.location.search);
+  const isLiff = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff');
+  
+  if (isLiff) {
+    switchToLiffMode();
+    return true;
+  }
+  return false;
+}
+
+function initLiffSdk() {
+  if (typeof liff === 'undefined') return;
+
+  google.script.run
+    .withSuccessHandler(function(config) {
+      liffConfigData = config;
+      if (config && config.liffId && config.liffId.trim() !== '') {
+        liff.init({ liffId: config.liffId.trim() })
+          .then(function() {
+            if (liff.isLoggedIn()) {
+              liff.getProfile().then(function(profile) {
+                const bar = document.getElementById('liffUserProfileBar');
+                const nameEl = document.getElementById('liffUserName');
+                const avatarEl = document.getElementById('liffUserAvatar');
+                if (bar && nameEl) {
+                  bar.style.display = 'flex';
+                  nameEl.textContent = profile.displayName || 'ผู้ใช้งาน LINE';
+                  if (profile.pictureUrl && avatarEl) {
+                    avatarEl.src = profile.pictureUrl;
+                  }
+                }
+              }).catch(function(err) {
+                console.log('LIFF profile warning:', err);
+              });
+            }
+          })
+          .catch(function(err) {
+            console.log('LIFF init warning:', err);
+          });
+      }
+    })
+    .getLiffConfig();
+}
+
+function switchToLiffMode() {
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('liffView').style.display = 'flex';
+  
+  syncCollegeLogos();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  hideLoading();
+}
+
+function switchToMainApp() {
+  document.getElementById('liffView').style.display = 'none';
+  if (appState.sessionToken) {
+    document.getElementById('appView').style.display = 'flex';
+  } else {
+    document.getElementById('loginView').style.display = 'flex';
+  }
+}
+
+function switchLiffTab(tabName) {
+  document.querySelectorAll('.liff-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.liffTab === tabName);
+  });
+  
+  document.querySelectorAll('.liff-tab-content').forEach(sec => {
+    sec.classList.remove('active');
+  });
+  
+  if (tabName === 'lookup') {
+    document.getElementById('liffTabLookup').classList.add('active');
+  } else if (tabName === 'checkin') {
+    document.getElementById('liffTabCheckin').classList.add('active');
+    if (liffCurrentStudent) {
+      document.getElementById('liffCheckinStudentId').value = liffCurrentStudent.NumberOrOrder || '';
+      verifyCheckinStudentId();
+    }
+  } else if (tabName === 'card') {
+    document.getElementById('liffTabCard').classList.add('active');
+    if (liffCurrentStudent) {
+      renderDigitalHealthCard(liffCurrentStudent);
+    }
+  }
+}
+
+function quickFillLiffId(id) {
+  const input = document.getElementById('liffStudentIdInput');
+  if (input) {
+    input.value = id;
+    handleLiffStudentLookup(new Event('submit'));
+  }
+}
+
+function handleLiffStudentLookup(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  
+  const idInput = document.getElementById('liffStudentIdInput');
+  const studentId = idInput.value.trim();
+  
+  if (!studentId || studentId.length !== 7 || !/^\d{7}$/.test(studentId)) {
+    showToast('กรุณากรอกรหัสประจำตัว นพอ. ให้ครบถ้วน 7 หลัก (ตัวเลขเท่านั้น)', 'warning');
+    idInput.focus();
+    return;
+  }
+  
+  showLoading('กำลังค้นหาข้อมูล นพอ. รหัส ' + studentId + '...');
+  
+  google.script.run
+    .withSuccessHandler(function(student) {
+      hideLoading();
+      const resContainer = document.getElementById('liffStudentResult');
+      
+      if (!student) {
+        resContainer.style.display = 'block';
+        resContainer.innerHTML = `
+          <div class="alert-box alert-warning">
+            <i class="fas fa-exclamation-circle"></i>
+            <div>
+              <strong>ไม่พบข้อมูลนักเรียนพยาบาลรหัส ${studentId}</strong>
+              <div class="text-xs mt-1">กรุณาตรวจสอบรหัส 7 หลัก หรือติดต่อห้องพยาบาล วพอ.</div>
+            </div>
+          </div>
+        `;
+        liffCurrentStudent = null;
+        return;
+      }
+      
+      liffCurrentStudent = student;
+      
+      const hasAllergy = student.DrugAllergies && student.DrugAllergies !== '-' && student.DrugAllergies.trim() !== '';
+      const allergyAlertHtml = hasAllergy ? `
+        <div class="liff-allergy-danger">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <strong style="font-size:0.95rem;">คำเตือนความปลอดภัยทางการแพทย์:</strong>
+            <div style="font-size:0.88rem; margin-top:2px;">มีประวัติแพ้ยา: <strong>${student.DrugAllergies}</strong></div>
+            <div class="text-xs" style="color:#b91c1c;">ห้ามจ่ายยาหรืออนุพันธ์กลุ่มนี้เด็ดขาด</div>
+          </div>
+        </div>
+      ` : `
+        <div class="alert-box alert-success mb-3">
+          <i class="fas fa-check-circle"></i>
+          <div><strong>ไม่มีประวัติแพ้ยาที่บันทึกไว้</strong> (ปลอดภัย)</div>
+        </div>
+      `;
+      
+      let visitsHtml = '<p class="text-xs text-muted">ไม่มีประวัติการเข้ารับบริการที่ผ่านมา</p>';
+      if (student.recentVisits && student.recentVisits.length > 0) {
+        visitsHtml = '<div class="table-responsive"><table class="table-custom" style="font-size:0.8rem;"><thead><tr><th>วันที่</th><th>อาการ</th><th>ผลตรวจ</th></tr></thead><tbody>';
+        student.recentVisits.forEach(v => {
+          visitsHtml += `<tr><td>${v.date ? String(v.date).substring(0,10) : '-'}</td><td>${v.complaint || '-'}</td><td>${v.outcome || '-'}</td></tr>`;
+        });
+        visitsHtml += '</tbody></table></div>';
+      }
+      
+      resContainer.style.display = 'block';
+      resContainer.innerHTML = `
+        ${allergyAlertHtml}
+        
+        <div class="digital-card mb-3">
+          <div class="digital-card-header">
+            <div>
+              <div class="digital-card-org"><i class="fas fa-shield-alt"></i> วิทยาลัยพยาบาลทหารอากาศ</div>
+              <div class="digital-card-sys">กรมแพทย์ทหารอากาศ • RTAFNC HEALTH</div>
+            </div>
+            <img class="digital-card-logo rtafnc-logo-img" alt="วพอ.">
+          </div>
+          <div class="digital-card-body">
+            <div class="digital-card-info">
+              <div class="digital-card-name">${student.Title || ''}${student.FirstName || ''} ${student.LastName || ''}</div>
+              <div class="digital-card-id"><i class="fas fa-id-badge"></i> ${student.NumberOrOrder || student.RecipientID}</div>
+              <div class="digital-card-meta">${student.Group || 'นพอ.'} | ${student.Level || '-'} | หมู่เลือด: ${student.BloodType || '-'}</div>
+              <div class="digital-card-badges">
+                <span class="digital-badge digital-badge-batch">${student.RecipientType || 'นพอ.'}</span>
+                <span class="digital-badge digital-badge-blood">Blood: ${student.BloodType || '-'}</span>
+                ${hasAllergy ? '<span class="digital-badge digital-badge-allergy">🚨 แพ้ยา: ' + student.DrugAllergies + '</span>' : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <span class="text-xs text-muted d-block">โรคประจำตัว</span>
+              <strong>${student.CongenitalDiseases || '-'}</strong>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 border rounded bg-light">
+              <span class="text-xs text-muted d-block">โรงพยาบาลประจำ</span>
+              <strong>${student.RegularHospital || 'รพ.ภูมิพลอดุลยเดช พอ.'}</strong>
+            </div>
+          </div>
+          <div class="col-6 mt-2">
+            <div class="p-2 border rounded bg-light">
+              <span class="text-xs text-muted d-block">น้ำหนัก / ส่วนสูง</span>
+              <strong>${student.Weight || '-'} กก. / ${student.Height || '-'} ซม.</strong>
+            </div>
+          </div>
+          <div class="col-6 mt-2">
+            <div class="p-2 border rounded bg-light">
+              <span class="text-xs text-muted d-block">ยาประจำตัว</span>
+              <strong>${student.RegularMedicines || '-'}</strong>
+            </div>
+          </div>
+        </div>
+
+        <h5 class="section-title mb-2" style="font-size:0.9rem;"><i class="fas fa-history"></i> ประวัติการเข้ารับบริการที่ผ่านมา</h5>
+        ${visitsHtml}
+
+        <div class="mt-3 d-flex gap-2">
+          <button type="button" class="btn btn-primary btn-block py-2" onclick="switchLiffTab('checkin')">
+            <i class="fas fa-stethoscope"></i> แจ้งอาการป่วย / ขอรับบริการ
+          </button>
+          <button type="button" class="btn btn-outline btn-block py-2" onclick="switchLiffTab('card')">
+            <i class="fas fa-qrcode"></i> บัตรสุขภาพดิจิทัล
+          </button>
+        </div>
+      `;
+      
+      syncCollegeLogos();
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('เกิดข้อผิดพลาดในการค้นหา: ' + err.message, 'danger');
+    })
+    .lookupStudentByStudentId(studentId);
+}
+
+function verifyCheckinStudentId() {
+  const idInput = document.getElementById('liffCheckinStudentId');
+  const preview = document.getElementById('liffCheckinStudentNamePreview');
+  const val = idInput.value.trim();
+  
+  if (val.length === 7 && /^\d{7}$/.test(val)) {
+    preview.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังตรวจสอบรายชื่อ...';
+    google.script.run
+      .withSuccessHandler(function(student) {
+        if (student) {
+          liffCurrentStudent = student;
+          preview.innerHTML = `✅ ${student.Title || ''}${student.FirstName || ''} ${student.LastName || ''} (${student.Group || 'นพอ.'})`;
+          if (student.DrugAllergies && student.DrugAllergies !== '-') {
+            preview.innerHTML += ` <span class="text-danger font-weight-bold">[🚨 แพ้ยา: ${student.DrugAllergies}]</span>`;
+          }
+        } else {
+          preview.innerHTML = `<span class="text-danger">❌ ไม่พบรหัสนักเรียนนี้ในระบบ</span>`;
+        }
+      })
+      .lookupStudentByStudentId(val);
+  } else {
+    preview.innerHTML = '';
+  }
+}
+
+function handleLiffCheckinSubmit(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  
+  const studentId = document.getElementById('liffCheckinStudentId').value.trim();
+  const chiefComplaint = document.getElementById('liffChiefComplaint').value.trim();
+  const location = document.getElementById('liffLocation').value;
+  const details = document.getElementById('liffIncidentDetails').value.trim();
+  const urgencyEl = document.querySelector('input[name="liffUrgency"]:checked');
+  const urgency = urgencyEl ? urgencyEl.value : 'Green';
+  
+  if (!studentId || studentId.length !== 7 || !/^\d{7}$/.test(studentId)) {
+    showToast('กรุณาระบุรหัสนักเรียน 7 หลักให้ถูกต้อง', 'warning');
+    document.getElementById('liffCheckinStudentId').focus();
+    return;
+  }
+  
+  if (!chiefComplaint) {
+    showToast('กรุณาระบุอาการสำคัญ', 'warning');
+    document.getElementById('liffChiefComplaint').focus();
+    return;
+  }
+  
+  let lineDisplayName = '';
+  if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+    try {
+      const p = liff.getDecodedIDToken();
+      if (p && p.name) lineDisplayName = p.name;
+    } catch (e) {}
+  }
+  
+  const payload = {
+    studentId: studentId,
+    chiefComplaint: chiefComplaint,
+    incidentLocation: location,
+    incidentDetails: details,
+    urgencyLevel: urgency,
+    lineDisplayName: lineDisplayName
+  };
+  
+  const btn = document.getElementById('liffCheckinSubmitBtn');
+  btn.disabled = true;
+  showLoading('กำลังส่งข้อมูลแจ้งอาการป่วยเข้าห้องพยาบาล...');
+  
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      btn.disabled = false;
+      
+      const resContainer = document.getElementById('liffCheckinSuccessCard');
+      resContainer.style.display = 'block';
+      resContainer.innerHTML = `
+        <div class="card p-3 border-success" style="background:#f0fdf4; border: 2px solid #16a34a;">
+          <div class="text-center mb-3">
+            <i class="fas fa-check-circle text-success fa-3x"></i>
+            <h4 class="mt-2 text-success font-weight-bold">แจ้งอาการเข้าห้องพยาบาลสำเร็จ</h4>
+            <p class="text-xs text-muted">ระบบได้ส่งข้อมูลให้อาจารย์พยาบาลและพยาบาลเวรเรียบร้อยแล้ว</p>
+          </div>
+          <div class="bg-white p-3 rounded border mb-3 text-left">
+            <div><strong>เลขที่บันทึก:</strong> <span class="badge badge-rtaf">${res.visitId}</span></div>
+            <div><strong>นักเรียนพยาบาล:</strong> ${res.studentName} (รหัส: ${res.studentId})</div>
+            <div><strong>เวลาส่งเรื่อง:</strong> ${res.timeIn} น.</div>
+            <div><strong>อาการ:</strong> ${res.chiefComplaint}</div>
+            <div><strong>ระดับความเร่งด่วน:</strong> ${res.urgencyLevel}</div>
+          </div>
+          <div class="text-center">
+            <p class="text-xs text-muted mb-2">เมื่อเดินทางมาถึงห้องพยาบาล กรุณาแจ้งรหัส นพอ. 7 หลัก (${res.studentId})</p>
+            ${typeof liff !== 'undefined' && liff.isInClient() ? '<button type="button" class="btn btn-outline btn-sm" onclick="liff.closeWindow()"><i class="fas fa-times-circle"></i> ปิดหน้าต่างนี้</button>' : ''}
+          </div>
+        </div>
+      `;
+      
+      document.getElementById('liffCheckinForm').reset();
+      document.getElementById('liffCheckinStudentNamePreview').innerHTML = '';
+      showToast('ส่งเรื่องแจ้งอาการป่วยเข้าห้องพยาบาลเรียบร้อย', 'success');
+      
+      resContainer.scrollIntoView({ behavior: 'smooth' });
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      btn.disabled = false;
+      showToast('ส่งข้อมูลไม่สำเร็จ: ' + err.message, 'danger');
+    })
+    .submitLiffSelfCheckin(payload);
+}
+
+function renderDigitalHealthCard(student) {
+  const container = document.getElementById('liffDigitalCardContainer');
+  const studentId = student.NumberOrOrder || student.RecipientID;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=RTAFNC-${studentId}`;
+  
+  container.innerHTML = `
+    <div class="digital-card mb-3">
+      <div class="digital-card-header">
+        <div>
+          <div class="digital-card-org"><i class="fas fa-shield-alt"></i> บัตรสุขภาพนักเรียนพยาบาลทหารอากาศ</div>
+          <div class="digital-card-sys">วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ</div>
+        </div>
+        <img class="digital-card-logo rtafnc-logo-img" alt="วพอ.">
+      </div>
+      <div class="digital-card-body">
+        <div class="digital-card-qr">
+          <img src="${qrUrl}" alt="QR สแกนเข้าตรวจ">
+        </div>
+        <div class="digital-card-info">
+          <div class="digital-card-name">${student.Title || ''}${student.FirstName || ''} ${student.LastName || ''}</div>
+          <div class="digital-card-id"><i class="fas fa-id-badge"></i> ${studentId}</div>
+          <div class="digital-card-meta">${student.Group || 'นพอ.'} • ${student.Level || '-'}</div>
+          <div class="digital-card-badges">
+            <span class="digital-badge digital-badge-blood">หมู่เลือด ${student.BloodType || '-'}</span>
+            ${student.DrugAllergies && student.DrugAllergies !== '-' ? '<span class="digital-badge digital-badge-allergy">🚨 แพ้ยา: ' + student.DrugAllergies + '</span>' : '<span class="digital-badge digital-badge-batch">ไม่พบประวัติแพ้ยา</span>'}
+          </div>
+        </div>
+      </div>
+      <div style="font-size:0.65rem; color:#bae6fd; text-align:right; margin-top:12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;">
+        สแกน QR เพื่อตรวจรักษาด่วน ณ ห้องพยาบาล วพอ. พอ.
+      </div>
+    </div>
+    
+    <div class="text-center mt-3">
+      <button type="button" class="btn btn-outline btn-sm" onclick="switchLiffTab('checkin')">
+        <i class="fas fa-notes-medical"></i> ใช้รหัสนี้แจ้งอาการป่วย
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="switchLiffTab('lookup')">
+        <i class="fas fa-search"></i> ค้นหารหัสอื่น
+      </button>
+    </div>
+  `;
+  
+  syncCollegeLogos();
 }
 </script>

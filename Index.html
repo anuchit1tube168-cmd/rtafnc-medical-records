@@ -6,6 +6,9 @@
   <!-- เชื่อมโยง FontAwesome สำหรับไอคอนสวยงาม -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   
+  <!-- LINE Front-end Framework (LIFF) SDK v2 -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
   <!-- โหลดสไตล์หลักจาก Styles.html -->
   <?!= include('Styles'); ?>
 </head>
@@ -56,6 +59,11 @@
         </button>
       </form>
       
+      <!-- ปุ่มเข้าใช้งานหน้าจอ LINE LIFF สำหรับนักเรียนพยาบาล -->
+      <button type="button" id="liffSwitchBtn" class="login-liff-btn" onclick="switchToLiffMode()">
+        <i class="fab fa-line" style="color: #06c755; font-size: 1.15rem;"></i> หน้าจอสำหรับ นพอ. (LINE LIFF)
+      </button>
+
       <!-- ปุ่มล็อกอินโหมดทดสอบ (แสดงผลเฉพาะเมื่อเปิด DEMO_ENABLED = TRUE) -->
       <button type="button" id="demoLoginBtn" class="btn btn-block login-demo-btn" style="display: none;">
         <i class="fas fa-flask"></i> ทดลองใช้งานระบบ (Demo Access)
@@ -82,6 +90,184 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- ==========================================
+       3.1 ส่วนหน้าจอ LINE LIFF (LIFF View)
+       หน้าจอสำหรับนักเรียนพยาบาลและเจ้าหน้าที่ผ่าน LINE
+       ========================================== -->
+  <div id="liffView" class="liff-container" style="display: none;">
+    <!-- LIFF Header Bar -->
+    <header class="liff-header">
+      <div class="liff-header-brand">
+        <img class="liff-logo rtafnc-logo-img" alt="วพอ.">
+        <div class="liff-header-titles">
+          <span class="liff-header-badge"><i class="fab fa-line"></i> LINE LIFF PORTAL</span>
+          <h1 class="liff-header-title">วิทยาลัยพยาบาลทหารอากาศ</h1>
+          <p class="liff-header-subtitle">ระบบเวชระเบียนและบริบาลสุขภาพ นพอ.</p>
+        </div>
+      </div>
+      <div class="liff-header-actions">
+        <button type="button" class="liff-btn-icon" onclick="switchToMainApp()" title="เข้าสู่ระบบเจ้าหน้าที่ (Admin)">
+          <i class="fas fa-user-shield"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- LIFF User Profile Status Bar (เมื่อเปิดผ่าน LINE จริง) -->
+    <div id="liffUserProfileBar" class="liff-profile-bar" style="display: none;">
+      <img id="liffUserAvatar" class="liff-avatar" src="" alt="LINE Profile">
+      <div class="liff-profile-text">
+        <span class="liff-profile-greeting">ยินดีต้อนรับ นพอ.</span>
+        <strong id="liffUserName">-</strong>
+      </div>
+      <span class="liff-verified-badge"><i class="fas fa-check-circle"></i> LINE Verified</span>
+    </div>
+
+    <!-- LIFF Navigation Tabs -->
+    <nav class="liff-tabs">
+      <button type="button" class="liff-tab-btn active" data-liff-tab="lookup" onclick="switchLiffTab('lookup')">
+        <i class="fas fa-id-card"></i> ข้อมูลสุขภาพ นพอ.
+      </button>
+      <button type="button" class="liff-tab-btn" data-liff-tab="checkin" onclick="switchLiffTab('checkin')">
+        <i class="fas fa-stethoscope"></i> แจ้งอาการป่วย / ขอรับบริการ
+      </button>
+      <button type="button" class="liff-tab-btn" data-liff-tab="card" onclick="switchLiffTab('card')">
+        <i class="fas fa-qrcode"></i> บัตรสุขภาพดิจิทัล
+      </button>
+    </nav>
+
+    <!-- Tab 1: ค้นหาข้อมูลสุขภาพด้วยรหัส 7 หลัก -->
+    <section id="liffTabLookup" class="liff-tab-content active">
+      <div class="liff-card">
+        <div class="liff-card-header">
+          <i class="fas fa-search-plus text-primary"></i>
+          <div>
+            <h3 class="liff-card-title">ตรวจสอบข้อมูลเวชระเบียน นพอ.</h3>
+            <p class="liff-card-desc">กรอกรหัสประจำตัวนักเรียนพยาบาลทหารอากาศ 7 หลัก</p>
+          </div>
+        </div>
+
+        <form id="liffLookupForm" onsubmit="handleLiffStudentLookup(event)">
+          <div class="liff-input-group">
+            <label class="liff-label" for="liffStudentIdInput">
+              <i class="fas fa-id-badge text-primary"></i> รหัสประจำตัวนักเรียนพยาบาล (7 หลัก)
+            </label>
+            <div class="liff-search-input-wrapper">
+              <input type="tel" id="liffStudentIdInput" class="liff-input-id" 
+                     placeholder="6601001" maxlength="7" pattern="[0-9]{7}" 
+                     inputmode="numeric" required autocomplete="off">
+              <button type="submit" id="liffSearchBtn" class="liff-btn-search">
+                <i class="fas fa-search"></i> ค้นหา
+              </button>
+            </div>
+            <div class="liff-id-hint">
+              <span class="text-muted">ตัวอย่างรหัส นพอ.:</span>
+              <button type="button" class="liff-chip" onclick="quickFillLiffId('6601001')">6601001 (แพ้ Penicillin)</button>
+              <button type="button" class="liff-chip" onclick="quickFillLiffId('6701015')">6701015 (หอบหืด)</button>
+              <button type="button" class="liff-chip" onclick="quickFillLiffId('6801008')">6801008 (ปี 1)</button>
+            </div>
+          </div>
+        </form>
+
+        <!-- ผลลัพธ์ข้อมูลสุขภาพนักเรียน -->
+        <div id="liffStudentResult" style="display: none;" class="mt-3"></div>
+      </div>
+    </section>
+
+    <!-- Tab 2: แจ้งอาการป่วย / ขอรับบริการห้องพยาบาล -->
+    <section id="liffTabCheckin" class="liff-tab-content">
+      <div class="liff-card">
+        <div class="liff-card-header">
+          <i class="fas fa-notes-medical text-danger"></i>
+          <div>
+            <h3 class="liff-card-title">แจ้งอาการป่วย / ขอรับบริการล่วงหน้า</h3>
+            <p class="liff-card-desc">ส่งข้อมูลอาการให้พยาบาลเวรเตรียมการรักษาก่อนเข้ามาห้องพยาบาล</p>
+          </div>
+        </div>
+
+        <form id="liffCheckinForm" onsubmit="handleLiffCheckinSubmit(event)">
+          <div class="form-group mb-3">
+            <label class="liff-label"><i class="fas fa-id-badge text-primary"></i> รหัสนักเรียน 7 หลัก *</label>
+            <input type="tel" id="liffCheckinStudentId" class="form-control" 
+                   placeholder="เช่น 6601001" maxlength="7" pattern="[0-9]{7}" 
+                   inputmode="numeric" required onblur="verifyCheckinStudentId()">
+            <div id="liffCheckinStudentNamePreview" class="text-xs text-primary mt-1 font-weight-bold"></div>
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="liff-label"><i class="fas fa-exclamation-circle text-danger"></i> อาการสำคัญ (Chief Complaint) *</label>
+            <input type="text" id="liffChiefComplaint" class="form-control" 
+                   placeholder="เช่น มีไข้สูง หนาวสั่น, ปวดศีรษะ, ข้อเท้าแพลงจากการฝึก" required>
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="liff-label"><i class="fas fa-tachometer-alt text-warning"></i> ประเมินระดับความเร่งด่วน</label>
+            <div class="liff-triage-options">
+              <label class="liff-triage-opt green">
+                <input type="radio" name="liffUrgency" value="Green" checked>
+                <span>🟢 ทั่วไป / ไม่เร่งด่วน (เดินมาห้องพยาบาลเองได้)</span>
+              </label>
+              <label class="liff-triage-opt yellow">
+                <input type="radio" name="liffUrgency" value="Yellow">
+                <span>🟡 ปานกลาง (ปวดมาก / อ่อนเพลีย / มีไข้)</span>
+              </label>
+              <label class="liff-triage-opt red">
+                <input type="radio" name="liffUrgency" value="Red">
+                <span>🔴 ฉุกเฉิน / รีบส่งตรวจทันที (หมดสติ / หายใจลำบาก / บาดเจ็บหนัก)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="liff-label"><i class="fas fa-map-marker-alt text-primary"></i> ปัจจุบันอยู่ที่ใด</label>
+            <select id="liffLocation" class="form-control">
+              <option value="หอพักนักเรียนพยาบาล">หอพักนักเรียนพยาบาล</option>
+              <option value="อาคารเรียน วพอ.">อาคารเรียน วพอ.</option>
+              <option value="สนามฝึกทางทหาร / โรงพลศึกษา">สนามฝึกทางทหาร / โรงพลศึกษา</option>
+              <option value="ฝึกงาน รพ.ภูมิพลอดุลยเดช พอ.">ฝึกงาน รพ.ภูมิพลอดุลยเดช พอ.</option>
+              <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="liff-label"><i class="fas fa-comment-medical text-muted"></i> รายละเอียดอาการเพิ่มเติม</label>
+            <textarea id="liffIncidentDetails" class="form-control" rows="2" placeholder="ระบุอาการเพิ่มเติม เช่น เริ่มเป็นเมื่อเช้า, ทานยาพาราแล้วไม่ดีขึ้น..."></textarea>
+          </div>
+
+          <button type="submit" id="liffCheckinSubmitBtn" class="btn btn-primary btn-block py-2 font-weight-bold">
+            <i class="fas fa-paper-plane"></i> ส่งข้อมูลแจ้งอาการเข้าห้องพยาบาล
+          </button>
+        </form>
+
+        <div id="liffCheckinSuccessCard" style="display: none;" class="mt-3"></div>
+      </div>
+    </section>
+
+    <!-- Tab 3: บัตรสุขภาพดิจิทัล (Digital Health Card & QR) -->
+    <section id="liffTabCard" class="liff-tab-content">
+      <div class="liff-card text-center" id="liffDigitalCardContainer">
+        <div class="text-muted p-4">
+          <i class="fas fa-id-card fa-3x mb-2 text-primary"></i>
+          <p>กรุณาค้นหารหัสประจำตัวนักเรียน 7 หลักในแท็บแรก<br>เพื่อแสดงบัตรสุขภาพดิจิทัล</p>
+          <button type="button" class="btn btn-outline btn-sm mt-2" onclick="switchLiffTab('lookup')">
+            <i class="fas fa-search"></i> ไปยังแท็บค้นหารหัส
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIFF Footer -->
+    <footer class="liff-footer">
+      <div class="liff-footer-info">
+        <span><i class="fas fa-phone-alt text-primary"></i> ห้องพยาบาล วิทยาลัยพยาบาลทหารอากาศ • รพ.ภูมิพลอดุลยเดช พอ.</span>
+      </div>
+      <div class="liff-footer-actions">
+        <button type="button" class="btn btn-sm btn-secondary" onclick="switchToMainApp()">
+          <i class="fas fa-lock"></i> สำหรับเจ้าหน้าที่/อาจารย์พยาบาล (Admin Login)
+        </button>
+      </div>
+    </footer>
   </div>
 
   <!-- ==========================================
@@ -153,6 +339,11 @@
             <i class="fas fa-cogs"></i><span>ตั้งค่าระบบ</span>
           </a>
         </li>
+        <li class="sidebar-item" data-menu="liff">
+          <a href="#" class="sidebar-link" data-page="liff" onclick="switchToLiffMode(); return false;">
+            <i class="fab fa-line" style="color: #06c755;"></i><span>หน้าจอ LINE LIFF</span>
+          </a>
+        </li>
       </ul>
       
       <!-- เมนูออกจากระบบด้านล่างสุด -->
@@ -189,6 +380,10 @@
           <div id="demoBadgeHeader" class="demo-badge" style="display: none;">
             <i class="fas fa-flask"></i> โหมดทดลองใช้งาน (Demo)
           </div>
+
+          <button id="syncDriveBtn" class="btn btn-sm d-none d-md-inline-flex" style="color: #005696; border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 8px; font-weight: 600; padding: 6px 12px; align-items: center; gap: 6px; cursor: pointer;" onclick="triggerDriveSync()" title="ซิงค์และนำเข้าข้อมูล นพอ. จาก Google Drive">
+            <i class="fab fa-google-drive" style="color: #0284c7;"></i> ซิงค์ Google Drive
+          </button>
           
           <div class="user-profile">
             <div class="profile-avatar" id="avatarInitial">A</div>
@@ -442,7 +637,7 @@
               <div class="search-filter-bar">
                 <div class="search-box">
                   <i class="fas fa-search"></i>
-                  <input type="text" id="recipientSearchInput" class="form-control" placeholder="ค้นหาด้วย เลขบัตรประชาชน, ชื่อ, นามสกุล หรือเลขที่รหัส..." oninput="filterRecipients()">
+                  <input type="text" id="recipientSearchInput" class="form-control" placeholder="ค้นหาด้วย รหัส นพอ. 7 หลัก, เลขบัตรประชาชน, ชื่อ, นามสกุล..." oninput="filterRecipients()">
                 </div>
                 <select id="recipientTypeFilter" class="filter-select" onchange="filterRecipients()">
                   <option value="All">-- แสดงทุกประเภทคนไข้ --</option>
@@ -924,8 +1119,11 @@
               <input type="text" id="recSubUnit" class="form-control">
             </div>
             <div class="form-group">
-              <label class="form-label">เลขที่/ลำดับรายชื่อ</label>
-              <input type="text" id="recNumberOrOrder" class="form-control" placeholder="ถ้ามี">
+              <label class="form-label font-weight-bold text-primary">
+                <i class="fas fa-id-badge"></i> รหัสประจำตัว นพอ. (7 หลัก) *
+              </label>
+              <input type="tel" id="recNumberOrOrder" class="form-control" placeholder="เช่น 6601001 (7 หลัก)" maxlength="7" pattern="[0-9]{7}" inputmode="numeric">
+              <small class="text-muted">รหัสประจำตัวนักเรียนพยาบาล 7 หลักตามบัญชีรายชื่อ</small>
             </div>
           </div>
 
@@ -1122,7 +1320,7 @@
               <label class="form-label" data-label-recipient>ค้นหาชื่อผู้รับบริการ *</label>
               <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input type="text" id="visitSearchQuery" class="form-control" placeholder="พิมพ์ชื่อเพื่อค้นหารายชื่อด่วน...">
+                <input type="text" id="visitSearchQuery" class="form-control" placeholder="พิมพ์รหัส นพอ. 7 หลัก หรือชื่อ เพื่อค้นหาด่วน..." onkeydown="if(event.key==='Enter'){event.preventDefault();handleQuickSearchRecipient();}">
               </div>
             </div>
             <div class="col-md-2">

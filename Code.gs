@@ -100,9 +100,16 @@ function doGet(e) {
     }
   }
 
-  // ตรวจสอบพารามิเตอร์ซิงค์ข้อมูลจาก Google Drive
-  if (e && e.parameter && (e.parameter.syncDrive === "true" || e.parameter.sync === "true")) {
+  // ตรวจสอบพารามิเตอร์ซิงค์ข้อมูลจาก Google Drive หรือ Google Drive Folder
+  if (e && e.parameter && (e.parameter.syncDrive === "true" || e.parameter.sync === "true" || e.parameter.folderId)) {
     try {
+      const folderIdParam = e.parameter.folderId ? String(e.parameter.folderId).trim() : "";
+      if (folderIdParam) {
+        try {
+          PropertiesService.getScriptProperties().setProperty("GOOGLE_DRIVE_FOLDER_ID", folderIdParam);
+        } catch (pErr) {}
+      }
+
       // ดึง Base64 ตราสัญลักษณ์ทางการของ วพอ. พอ.
       let logoSrc = "";
       try {
@@ -111,7 +118,7 @@ function doGet(e) {
         if (m && m[1]) logoSrc = m[1];
       } catch (lErr) {}
 
-      const syncResult = syncDataFromGoogleDrive();
+      const syncResult = syncDataFromGoogleDrive(null, folderIdParam);
       const logsHtml = (syncResult.logs || []).map(l => "<li>🔹 " + l + "</li>").join("");
       const outputHtml = `
         <!DOCTYPE html>
@@ -3932,7 +3939,7 @@ function submitLiffSelfCheckin(payload) {
 /**
  * ซิงค์และนำเข้าข้อมูลเวชระเบียนและรายชื่อ นพอ. จากไฟล์ใน Google Drive
  */
-function syncDataFromGoogleDrive(sessionToken) {
+function syncDataFromGoogleDrive(sessionToken, customFolderId) {
   if (sessionToken) {
     const session = validateSession(sessionToken);
     if (session.role !== "ADMIN" && session.role !== "MEDICAL") {
@@ -3991,17 +3998,46 @@ function syncDataFromGoogleDrive(sessionToken) {
       if (fn && ln) existingNames.add(fn + " " + ln);
     }
 
-    // 2. แหล่งข้อมูลใน Google Drive ดึงจาก Script Properties เพื่อความปลอดภัยสูงสุด (Zero Hardcoded IDs)
+    // 2. แหล่งข้อมูลใน Google Drive ดึงจากโฟลเดอร์ Google Drive หรือ Script Properties (Zero Hardcoded IDs)
     let targetFileIds = [];
+    const folderId = customFolderId || PropertiesService.getScriptProperties().getProperty("GOOGLE_DRIVE_FOLDER_ID") || getBackendConfig("GOOGLE_DRIVE_FOLDER_ID", "");
+    if (folderId) {
+      try {
+        const folder = DriveApp.getFolderById(folderId.trim());
+        result.logs.push("กำลังตรวจสอบโฟลเดอร์ Google Drive: '" + folder.getName() + "'");
+        const folderFiles = folder.getFiles();
+        while (folderFiles.hasNext()) {
+          const f = folderFiles.next();
+          const mime = f.getMimeType();
+          const fname = f.getName();
+          if (mime === MimeType.GOOGLE_SHEETS || fname.endsWith(".xlsx") || fname.endsWith(".csv")) {
+            if (f.getId() !== ss.getId()) {
+              targetFileIds.push({ id: f.getId(), label: fname });
+            }
+          }
+        }
+      } catch (fErr) {
+        result.logs.push("คำเตือนการเข้าถึงโฟลเดอร์ Google Drive: " + fErr.message);
+      }
+    }
+
     const syncSourceConfig = PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || getBackendConfig("SYNC_SOURCE_IDS", "");
     if (syncSourceConfig) {
       try {
         if (syncSourceConfig.trim().startsWith("[")) {
-          targetFileIds = JSON.parse(syncSourceConfig);
+          const parsed = JSON.parse(syncSourceConfig);
+          parsed.forEach(function(item) {
+            if (item && item.id && !targetFileIds.some(function(t) { return t.id === item.id; })) {
+              targetFileIds.push(item);
+            }
+          });
         } else {
-          targetFileIds = syncSourceConfig.split(",").map(function(id, idx) {
-            return { id: id.trim(), label: "แหล่งข้อมูล #" + (idx + 1) };
-          }).filter(function(item) { return item.id.length > 0; });
+          syncSourceConfig.split(",").forEach(function(id, idx) {
+            const cleanId = id.trim();
+            if (cleanId && !targetFileIds.some(function(t) { return t.id === cleanId; })) {
+              targetFileIds.push({ id: cleanId, label: "แหล่งข้อมูล #" + (idx + 1) });
+            }
+          });
         }
       } catch (e) {
         Logger.log("เกิดข้อผิดพลาดในการแปลง SYNC_SOURCE_IDS: " + e.message);

@@ -100,6 +100,166 @@ function doGet(e) {
     }
   }
 
+  // ตรวจสอบพารามิเตอร์ดูทะเบียนข้อมูลนักเรียนพร้อมรหัส 7 หลัก
+  if (e && e.parameter && (e.parameter.page === "roster" || e.parameter.viewStudents === "true" || e.parameter.roster === "true")) {
+    try {
+      let logoSrc = "";
+      try {
+        const indexHtml = HtmlService.createHtmlOutputFromFile("Index").getContent();
+        const m = indexHtml.match(/src="(data:image\/png;base64,[^"]+)"/);
+        if (m && m[1]) logoSrc = m[1];
+      } catch (lErr) {}
+
+      const ss = getSpreadsheet();
+      const sheet = ss.getSheetByName("ServiceRecipients");
+      const data = sheet ? sheet.getDataRange().getValues() : [];
+      const headers = data[0] || [];
+      const numIdx = headers.indexOf("NumberOrOrder");
+      const titleIdx = headers.indexOf("Title");
+      const fnIdx = headers.indexOf("FirstName");
+      const lnIdx = headers.indexOf("LastName");
+      const grpIdx = headers.indexOf("Group");
+      const deptIdx = headers.indexOf("Department");
+      const bloodIdx = headers.indexOf("BloodGroup");
+      const allergyIdx = headers.indexOf("AllergyMedication");
+
+      let studentsList = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const studentId = String(row[numIdx] || "").trim();
+        if (studentId) {
+          studentsList.push({
+            studentId: studentId,
+            fullName: (row[titleIdx] || "") + (row[fnIdx] || "") + " " + (row[lnIdx] || ""),
+            group: row[grpIdx] || "-",
+            dept: row[deptIdx] || "-",
+            blood: row[bloodIdx] || "-",
+            allergy: row[allergyIdx] || "-"
+          });
+        }
+      }
+
+      // เรียงลำดับตามรหัสนักเรียน
+      studentsList.sort((a, b) => a.studentId.localeCompare(b.studentId));
+
+      const rowsHtml = studentsList.map((s, idx) => `
+        <tr>
+          <td style="text-align:center;color:#64748b;">${idx + 1}</td>
+          <td><strong style="color:#005696;font-size:1.05rem;letter-spacing:0.5px;">${s.studentId}</strong></td>
+          <td><strong>${s.fullName}</strong></td>
+          <td><span class="badge badge-grp">${s.group} / ${s.dept}</span></td>
+          <td style="text-align:center;"><span class="badge badge-blood">${s.blood}</span></td>
+          <td>${s.allergy && s.allergy !== "-" && s.allergy !== "ไม่มี" ? `<span class="badge badge-danger">⚠️ ${s.allergy}</span>` : `<span style="color:#94a3b8;">-</span>`}</td>
+          <td style="text-align:center;">
+            <a href="?page=liff&id=${s.studentId}" class="btn-sm" title="เปิดบัตรสุขภาพใน LINE LIFF">บัตรสุขภาพ LIFF 📱</a>
+          </td>
+        </tr>
+      `).join("");
+
+      const rosterHtml = `
+        <!DOCTYPE html>
+        <html lang="th">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>ทะเบียนข้อมูลนักเรียนพยาบาลทหารอากาศ (รหัส 7 หลัก) - วพอ.</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
+            body { font-family: 'Kanit', sans-serif; background: #f0f4f8; color: #1e293b; padding: 20px; margin: 0; }
+            .container { max-width: 1100px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 4px 25px rgba(0,0,0,0.06); }
+            .header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+            .brand { display: flex; align-items: center; gap: 14px; }
+            .brand img { width: 62px; height: 62px; border-radius: 50%; border: 2px solid #f59e0b; }
+            h2 { color: #005696; margin: 0; font-size: 1.4rem; }
+            p.sub { margin: 4px 0 0; color: #64748b; font-size: 0.88rem; }
+            .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+            .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-weight: 600; text-decoration: none; font-size: 0.9rem; }
+            .btn-primary { background: #005696; color: #fff; }
+            .btn-success { background: #16a34a; color: #fff; }
+            .btn-outline { background: #fff; border: 1px solid #cbd5e1; color: #334155; }
+            .btn-sm { padding: 5px 12px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 6px; font-size: 0.8rem; font-weight: 500; display: inline-block; }
+            .search-box { margin-bottom: 18px; position: relative; }
+            .search-input { width: 100%; box-sizing: border-box; padding: 12px 16px; font-size: 1rem; font-family: inherit; border: 1.5px solid #cbd5e1; border-radius: 10px; outline: none; transition: border-color 0.2s; }
+            .search-input:focus { border-color: #005696; box-shadow: 0 0 0 3px rgba(0,86,150,0.15); }
+            .stats-bar { display: flex; gap: 12px; margin-bottom: 16px; font-size: 0.88rem; color: #475569; }
+            .table-responsive { overflow-x: auto; max-height: 65vh; border: 1px solid #e2e8f0; border-radius: 12px; }
+            table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+            th { background: #f8fafc; color: #475569; font-weight: 600; padding: 12px 14px; position: sticky; top: 0; border-bottom: 2px solid #cbd5e1; z-index: 10; }
+            td { padding: 11px 14px; border-bottom: 1px solid #f1f5f9; }
+            tr:hover { background: #f8fafc; }
+            .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+            .badge-grp { background: #f1f5f9; color: #334155; }
+            .badge-blood { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+            .badge-danger { background: #fee2e2; color: #b91c1c; font-weight: bold; border: 1px solid #fca5a5; }
+          </style>
+          <script>
+            function filterTable() {
+              const query = document.getElementById('searchBox').value.toLowerCase().trim();
+              const rows = document.querySelectorAll('tbody tr');
+              let visible = 0;
+              rows.forEach(r => {
+                const text = r.textContent.toLowerCase();
+                const show = text.includes(query);
+                r.style.display = show ? '' : 'none';
+                if (show) visible++;
+              });
+              document.getElementById('countDisplay').textContent = visible;
+            }
+          </script>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="brand">
+                <img id="loginLogoImg" class="rtafnc-logo-img" src="${logoSrc}" alt="วพอ.">
+                <div>
+                  <h2>ทะเบียนนักเรียนพยาบาลทหารอากาศ (รหัส 7 หลัก)</h2>
+                  <p class="sub">วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ</p>
+                </div>
+              </div>
+              <div class="actions">
+                <a href="?" class="btn btn-outline">🔑 เข้าสู่ระบบหลัก (Dashboard)</a>
+                <a href="?page=liff" class="btn btn-primary">📱 หน้าจอ LINE LIFF</a>
+                <a href="?syncDrive=true" class="btn btn-success">🔄 ซิงค์อัปเดต Google Drive</a>
+              </div>
+            </div>
+            
+            <div class="search-box">
+              <input type="text" id="searchBox" class="search-input" onkeyup="filterTable()" placeholder="🔍 พิมพ์ค้นหารหัส นพอ. 7 หลัก หรือชื่อ-นามสกุล หรือชั้นปี เช่น 660, 670, 680, ชื่อ...">
+            </div>
+
+            <div class="stats-bar">
+              <span>แสดงผล: <strong id="countDisplay" style="color:#005696;">${studentsList.length}</strong> จากทั้งหมด <strong>${studentsList.length}</strong> ราย</span>
+            </div>
+
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 50px; text-align: center;">ลำดับ</th>
+                    <th style="width: 120px;">รหัส นพอ. (7 หลัก)</th>
+                    <th>ชื่อ - นามสกุล</th>
+                    <th>ชั้นปี / ตอน</th>
+                    <th style="width: 80px; text-align: center;">กรุ๊ปเลือด</th>
+                    <th>ประวัติการแพ้ยา ⚠️</th>
+                    <th style="width: 140px; text-align: center;">เปิดบัตรสุขภาพ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      return HtmlService.createHtmlOutput(rosterHtml);
+    } catch (rErr) {
+      return HtmlService.createHtmlOutput("<h3>เกิดข้อผิดพลาดในการดึงข้อมูลนักเรียน:</h3><p>" + rErr.message + "</p>");
+    }
+  }
+
   // ตรวจสอบพารามิเตอร์ซิงค์ข้อมูลจาก Google Drive หรือ Google Drive Folder
   if (e && e.parameter && (e.parameter.syncDrive === "true" || e.parameter.sync === "true" || e.parameter.folderId)) {
     try {

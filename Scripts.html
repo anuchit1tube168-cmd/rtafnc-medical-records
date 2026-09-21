@@ -2602,6 +2602,12 @@ function checkLiffModeOnLoad() {
   
   if (isLiff) {
     switchToLiffMode();
+    const studentIdParam = params.get('id') || params.get('studentId');
+    if (studentIdParam && studentIdParam.trim().length === 7) {
+      setTimeout(function() {
+        quickFillLiffId(studentIdParam.trim());
+      }, 400);
+    }
     return true;
   }
   return false;

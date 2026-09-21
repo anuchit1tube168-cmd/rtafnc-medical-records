@@ -155,17 +155,14 @@
             </label>
             <div class="liff-search-input-wrapper">
               <input type="tel" id="liffStudentIdInput" class="liff-input-id" 
-                     placeholder="6601001" maxlength="7" pattern="[0-9]{7}" 
+                     placeholder="ระบุรหัส 7 หลัก (เช่น 66xxxxx)" maxlength="7" pattern="[0-9]{7}" 
                      inputmode="numeric" required autocomplete="off">
               <button type="submit" id="liffSearchBtn" class="liff-btn-search">
                 <i class="fas fa-search"></i> ค้นหา
               </button>
             </div>
             <div class="liff-id-hint">
-              <span class="text-muted">ตัวอย่างรหัส นพอ.:</span>
-              <button type="button" class="liff-chip" onclick="quickFillLiffId('6601001')">6601001 (แพ้ Penicillin)</button>
-              <button type="button" class="liff-chip" onclick="quickFillLiffId('6701015')">6701015 (หอบหืด)</button>
-              <button type="button" class="liff-chip" onclick="quickFillLiffId('6801008')">6801008 (ปี 1)</button>
+              <span class="text-muted"><i class="fas fa-info-circle"></i> ป้อนรหัสประจำตัวนักเรียนพยาบาล 7 หลักเพื่อเรียกดูข้อมูลสุขภาพและบัตรประจำตัว</span>
             </div>
           </div>
         </form>

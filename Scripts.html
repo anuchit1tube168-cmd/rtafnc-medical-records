@@ -295,15 +295,22 @@ function verifySessionToken() {
   
   google.script.run
     .withSuccessHandler(function(user) {
+      if (!user) {
+        hideLoading();
+        logoutLocal();
+        return;
+      }
       appState.currentUser = user;
       
       // ดึงค่าตั้งค่าระบบมาก่อนทำงาน
       google.script.run
         .withSuccessHandler(function(settings) {
           appState.settings = {};
-          settings.forEach(item => {
-            appState.settings[item.SettingKey] = item.SettingValue;
-          });
+          if (Array.isArray(settings)) {
+            settings.forEach(item => {
+              appState.settings[item.SettingKey] = item.SettingValue;
+            });
+          }
           
           hideLoading();
           
@@ -315,29 +322,40 @@ function verifySessionToken() {
           document.getElementById('appView').style.display = 'flex';
           
           // กำหนดผู้ใช้ที่แสดงในหน้าจอ
-          document.getElementById('avatarInitial').textContent = user.fullName.substring(0, 1);
-          document.getElementById('userNameDisplay').textContent = user.fullName;
+          document.getElementById('avatarInitial').textContent = (user.fullName || 'A').substring(0, 1);
+          document.getElementById('userNameDisplay').textContent = user.fullName || 'ผู้ดูแลระบบ';
           document.getElementById('userRoleDisplay').textContent = getRoleThai(user.role);
           
           // แสดงป้ายทดลองเมื่อล็อกอินด้วย DEMO
           const badge = document.getElementById('demoBadgeHeader');
-          if (user.role === 'DEMO') {
-            badge.style.display = 'inline-block';
-          } else {
-            badge.style.display = 'none';
+          if (badge) {
+            badge.style.display = (user.role === 'DEMO') ? 'inline-block' : 'none';
           }
           
           // นำไปยังหน้าแดชบอร์ดเริ่มต้น
           showPage('dashboard');
         })
         .withFailureHandler(function(err) {
+          // หากดึง settings มีปัญหา ให้เข้าใช้งานด้วยค่า default ได้ทันที ไม่ค้างหน้าล็อกอิน
           hideLoading();
-          showToast('ไม่สามารถดึงข้อมูลการตั้งค่าระบบได้', 'danger');
+          appState.settings = {};
+          renderSidebarMenu();
+          applySettingsLabels();
+          
+          document.getElementById('loginView').style.display = 'none';
+          document.getElementById('appView').style.display = 'flex';
+          
+          document.getElementById('avatarInitial').textContent = (user.fullName || 'A').substring(0, 1);
+          document.getElementById('userNameDisplay').textContent = user.fullName || 'ผู้ดูแลระบบ';
+          document.getElementById('userRoleDisplay').textContent = getRoleThai(user.role);
+          
+          showPage('dashboard');
         })
         .getSettings(appState.sessionToken);
     })
     .withFailureHandler(function(err) {
       hideLoading();
+      showToast('การเชื่อมต่อเซสชันล้มเหลว: ' + err.message, 'danger');
       logoutLocal();
     })
     .getCurrentUser(appState.sessionToken);

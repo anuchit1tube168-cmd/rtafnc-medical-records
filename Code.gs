@@ -78,13 +78,25 @@ function doGet(e) {
     } catch (secErr) {}
   }
 
-  // ตรวจสอบพารามิเตอร์รันทดสอบระบบ
+  // ตรวจสอบพารามิเตอร์รันทดสอบระบบฟอร์ม
   if (e && e.parameter && e.parameter.runTest === "true") {
     try {
       testSubmitForm();
       return HtmlService.createHtmlOutput("<h3>รันทดสอบระบบส่งแจ้งเตือน Telegram + Google Slides เรียบร้อยแล้ว! กรุณาตรวจสอบในห้องแชท Telegram</h3>");
     } catch (err) {
       return HtmlService.createHtmlOutput("<h3>เกิดข้อผิดพลาดในการรันทดสอบ:</h3><p>" + err.message + "</p>");
+    }
+  }
+
+  // ตรวจสอบพารามิเตอร์ทดสอบการแจ้งเตือน Telegram
+  if (e && e.parameter && e.parameter.testTelegram === "true") {
+    try {
+      const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "dd/MM/yyyy HH:mm:ss");
+      const testMsg = `🔔 <b>ทดสอบการเชื่อมต่อระบบแจ้งเตือน Telegram</b>\nระบบเวชระเบียนและบริบาลสุขภาพ นพอ.\nวิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ\nเวลา: ${nowStr} น.\nสถานะ: เชื่อมต่อสำเร็จ 100% ✅`;
+      sendTelegramNotification(testMsg);
+      return HtmlService.createHtmlOutput("<div style='font-family:sans-serif;padding:30px;text-align:center;'><h3>✅ ส่งข้อความทดสอบไปยัง Telegram เรียบร้อยแล้ว!</h3><p>กรุณาตรวจสอบข้อความแจ้งเตือนในห้องแชท Telegram ของท่าน</p></div>");
+    } catch (err) {
+      return HtmlService.createHtmlOutput("<div style='font-family:sans-serif;padding:30px;color:red;'><h3>❌ เกิดข้อผิดพลาดในการส่ง Telegram:</h3><p>" + err.message + "</p></div>");
     }
   }
 
@@ -338,7 +350,8 @@ function initializeDefaultSettings(ss) {
     ["TELEGRAM_BOT_TOKEN", "", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["TELEGRAM_CHAT_ID", "", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["GOOGLE_FORM_ID", "", "ไอดี Google Form รับคำตอบ (เก็บหลังบ้าน)"],
-    ["GOOGLE_SLIDES_TEMPLATE_ID", "", "ไอดี Google Slides สำหรับออกเอกสารตรวจรักษา (เก็บหลังบ้าน)"]
+    ["GOOGLE_SLIDES_TEMPLATE_ID", "", "ไอดี Google Slides สำหรับออกเอกสารตรวจรักษา (เก็บหลังบ้าน)"],
+    ["GOOGLE_CALENDAR_ID", "primary", "ไอดี Google Calendar สำหรับนัดหมายติดตามอาการ (เช่น primary หรือ c_xxx@group.calendar.google.com)"]
   ];
 
   // อ่านข้อมูลเดิมเพื่อไม่ให้บันทึกซ้ำ
@@ -2577,8 +2590,77 @@ function saveFollowUp(sessionToken, followUpData) {
       break;
     }
   }
+
+  // ซิงค์ลง Google Calendar และแจ้งเตือน Telegram อัตโนมัติ
+  try {
+    syncFollowUpToGoogleCalendar(followUpData, ss);
+  } catch (calErr) {
+    Logger.log("Google Calendar sync warning: " + calErr.message);
+  }
   
   return { success: true, id: followUpData.FollowUpID, message: "บันทึกการนัดติดตามอาการแล้ว" };
+}
+
+/**
+ * ซิงค์นัดติดตามอาการ (Follow Up) เข้าสู่ Google Calendar อัตโนมัติ
+ */
+function syncFollowUpToGoogleCalendar(followUpData, ss) {
+  if (!followUpData || !followUpData.DueDate) return;
+  try {
+    const calendarId = getBackendConfig("GOOGLE_CALENDAR_ID", "primary");
+    const calendar = calendarId === "primary" ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(calendarId);
+    if (!calendar) return;
+
+    const dueDate = new Date(followUpData.DueDate);
+    if (isNaN(dueDate.getTime())) return;
+
+    let recipientName = "นพอ.";
+    let studentId = "-";
+    if (ss && followUpData.RecipientID) {
+      const repSheet = ss.getSheetByName("ServiceRecipients");
+      if (repSheet) {
+        const repData = repSheet.getDataRange().getValues();
+        const repHeaders = repData[0] || [];
+        const rIdIdx = repHeaders.indexOf("RecipientID");
+        const numIdx = repHeaders.indexOf("NumberOrOrder");
+        for (let i = 1; i < repData.length; i++) {
+          if (repData[i][rIdIdx] === followUpData.RecipientID) {
+            recipientName = (repData[i][2] || "") + (repData[i][3] || "") + " " + (repData[i][4] || "");
+            studentId = String(repData[i][numIdx] || "").trim();
+            break;
+          }
+        }
+      }
+    }
+
+    const startTime = new Date(dueDate);
+    startTime.setHours(9, 0, 0, 0);
+    const endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+
+    const title = `[วพอ. นัดติดตามอาการ] ${recipientName} (${followUpData.FollowUpID})`;
+    const description = `ระบบเวชระเบียนและบริบาลสุขภาพ วิทยาลัยพยาบาลทหารอากาศ\n` +
+      `ผู้รับบริการ: ${recipientName} (รหัส: ${studentId})\n` +
+      `หัวข้อนัด: ${followUpData.Notes || "ติดตามอาการหลังการรักษา"}\n` +
+      `สถานะ: ${followUpData.Status || "Pending"}\n` +
+      `รหัสติดตาม: ${followUpData.FollowUpID}\n` +
+      `สถานที่: ห้องพยาบาล วพอ. พอ.`;
+
+    calendar.createEvent(title, startTime, endTime, {
+      description: description,
+      location: "ห้องพยาบาล วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ"
+    });
+
+    // ส่งแจ้งเตือน Telegram นัดหมายติดตามอาการ
+    const dateStr = Utilities.formatDate(dueDate, "Asia/Bangkok", "dd/MM/yyyy");
+    let telMsg = `📅 <b>บันทึกนัดติดตามอาการ (Google Calendar)</b>\n`;
+    telMsg += `<b>นพอ.:</b> ${recipientName} (รหัส: ${studentId})\n`;
+    telMsg += `<b>วันนัดหมาย:</b> ${dateStr} เวลา 09:00 น.\n`;
+    telMsg += `<b>บันทึก:</b> ${followUpData.Notes || "-"}\n`;
+    telMsg += `<b>สถานที่:</b> ห้องพยาบาล วพอ.`;
+    sendTelegramNotification(telMsg);
+  } catch (e) {
+    Logger.log("syncFollowUpToGoogleCalendar error: " + e.message);
+  }
 }
 
 /**
@@ -3241,7 +3323,7 @@ function saveSettings(sessionToken, settingsMap) {
     }
 
     // ซิงค์ค่าความลับเข้า Script Properties หลังบ้านทันที
-    const secretKeys = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "GOOGLE_FORM_ID", "GOOGLE_SLIDES_TEMPLATE_ID", "SPREADSHEET_ID"];
+    const secretKeys = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "GOOGLE_FORM_ID", "GOOGLE_SLIDES_TEMPLATE_ID", "SPREADSHEET_ID", "GOOGLE_CALENDAR_ID", "LINE_LIFF_ID", "SYNC_SOURCE_IDS"];
     if (secretKeys.indexOf(key) !== -1 && sanitizedVal) {
       try {
         PropertiesService.getScriptProperties().setProperty(key, sanitizedVal);
@@ -3811,6 +3893,30 @@ function submitLiffSelfCheckin(payload) {
     timestamp
   ]);
   
+  // ส่งการแจ้งเตือนไปยัง Telegram ทันทีเมื่อ นพอ. แจ้งอาการผ่าน LINE LIFF
+  try {
+    let urgencyIcon = "🟢 ทั่วไป";
+    if (payload.urgencyLevel === "Yellow") urgencyIcon = "🟡 ปานกลาง (ควรพบพยาบาลเร็วที่สุด)";
+    if (payload.urgencyLevel === "Red") urgencyIcon = "🔴 ด่วนที่สุด / ฉุกเฉิน";
+
+    let alertMsg = `📱 <b>แจ้งอาการป่วยล่วงหน้าผ่าน LINE LIFF</b>\n`;
+    alertMsg += `<b>นพอ.:</b> ${fullName} (รหัส: ${student.NumberOrOrder || student.RecipientID})\n`;
+    alertMsg += `<b>ชั้นปี/ตอน:</b> ${student.Group || "-"} / ${student.Department || "-"}\n`;
+    alertMsg += `<b>ระดับความเร่งด่วน:</b> ${urgencyIcon}\n`;
+    alertMsg += `<b>อาการสำคัญ:</b> ${payload.chiefComplaint || "-"}\n`;
+    alertMsg += `<b>สถานที่:</b> ${payload.incidentLocation || "หอพักนักเรียนพยาบาล"}\n`;
+    if (student.AllergyMedication && student.AllergyMedication !== "-" && student.AllergyMedication !== "ไม่มี") {
+      alertMsg += `⚠️ <b>ประวัติแพ้ยา:</b> ${student.AllergyMedication}\n`;
+    }
+    if (student.CongenitalDisease && student.CongenitalDisease !== "-" && student.CongenitalDisease !== "ไม่มี") {
+      alertMsg += `🩺 <b>โรคประจำตัว:</b> ${student.CongenitalDisease}\n`;
+    }
+    alertMsg += `<b>เวลาแจ้ง:</b> ${dateStr} เวลา ${timeStr} น.`;
+    sendTelegramNotification(alertMsg);
+  } catch (telErr) {
+    Logger.log("Telegram notification failed in submitLiffSelfCheckin: " + telErr.message);
+  }
+
   return {
     success: true,
     visitId: visitId,

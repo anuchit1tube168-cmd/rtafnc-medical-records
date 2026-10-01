@@ -103,6 +103,21 @@
    - `GOOGLE_FORM_ID`
    - `GOOGLE_SLIDES_TEMPLATE_ID`
 
+### แบบที่ใช้งานจริงบน Cloudflare
+
+หน้าเว็บทั้งหมดเสิร์ฟจาก **Cloudflare Worker** และติดต่อฐานข้อมูลเดิมผ่านสคริปต์สะพานบน Google Apps Script
+ทุกคำขอถูกลงนามด้วย HMAC และมีการตรวจสิทธิ์ที่ฝั่งเซิร์ฟเวอร์
+
+| คีย์ | ที่ต้องใช้ |
+|---|---|
+| `SPREADSHEET_ID` | Google Sheets ฐานข้อมูลเดิม |
+| `GAS_BRIDGE_SECRET` | ค่าสุ่มอย่างน้อย 32 ตัวอักษร ต้องตรงกับฝั่ง Cloudflare |
+| `CF_NOTIFICATIONS_ENABLED` | `FALSE` เริ่มต้น ปิดการส่ง Telegram |
+
+รหัสผ่านในระบบใหม่ยาวอย่างน้อย 12 ตัวอักษร และต้องเก็บเป็นค่าแฮช SHA-256 ในชีต `Users`
+
+ดูขั้นตอนติดตั้งทั้งหมดที่ [`docs/INSTALL.md`](docs/INSTALL.md) และปัญหาที่พบบ่อยที่ [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
+
 ---
 
 ## 🛠️ โครงสร้างไฟล์ในโครงการ
@@ -110,11 +125,24 @@
 ```text
 ├── assets/
 │   └── rtafnc_logo.png # ตราสัญลักษณ์ทางการวิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ
+├── package.json        # คำสั่ง build/test/deploy สำหรับ Cloudflare
+├── wrangler.jsonc      # การตั้งค่า Worker และ Static Assets
+├── docs/
+│   ├── INSTALL.md      # ติดตั้งบน Cloudflare ทีละขั้น
+│   └── TROUBLESHOOTING.md # ปัญหาที่พบบ่อยและวิธีตรวจ
 ├── Code.gs             # Backend Logic (GAS, Sheets/Drive/Slides/Telegram, LIFF API)
 ├── Index.html          # โครงสร้างหน้าเว็บหลัก Single Page Application & LINE LIFF
 ├── Styles.html         # สไตล์ธีม Light Mission Control (Air Force Blue, Gold, Mint)
 ├── Scripts.html        # Frontend JavaScript (State Controllers, Modals, LIFF, Sync)
 ├── appsscript.json     # Apps Script Manifest (Timezone, WebApp scopes)
+├── cloudflare/
+│   ├── worker.mjs      # Worker รับคำขอ ตรวจ Origin ลงนาม HMAC และส่งต่อไป Google
+│   ├── google-bridge.js  # ฝั่ง Google: ตรวจลายเซ็น กันคำขอซ้ำ และตรวจสิทธิ์
+│   ├── google-overrides.js  # การเข้าสู่ระบบและการอ่านฐานข้อมูลของรุ่น Cloudflare
+│   ├── client.js       # ตัวเชื่อมหน้าเว็บเดิมให้เรียกผ่าน Worker
+│   ├── methods.mjs     # รายการฟังก์ชันที่เปิดให้เรียกได้เท่านั้น
+│   ├── build.mjs       # สร้าง dist/public และ dist/google
+│   └── security.test.mjs # ชุดทดสอบด้านความปลอดภัย
 ├── .clasp.json.example # ตัวอย่างไฟล์คอนฟิก Clasp
 ├── .gitignore          # ละเว้นไฟล์ความลับและคอนฟิกเครื่อง
 └── README.md           # รายละเอียดคู่มือการติดตั้งและสถาปัตยกรรมระบบ

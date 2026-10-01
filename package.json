@@ -1,0 +1,13 @@
+{
+  "name": "rtafnc-medical-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node cloudflare/build.mjs",
+    "test": "node --test cloudflare/*.test.mjs",
+    "dev": "npm run build && wrangler dev",
+    "deploy:check": "npm run build && wrangler deploy --dry-run",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": { "acorn": "^8.15.0", "wrangler": "^4.0.0" }
+}

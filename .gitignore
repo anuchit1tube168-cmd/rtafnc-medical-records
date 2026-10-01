@@ -19,8 +19,11 @@ LocalSecrets.gs
 *.bak
 *.tmp
 node_modules/
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
 .env
 .env.local
 .env.*
 scratch/
-

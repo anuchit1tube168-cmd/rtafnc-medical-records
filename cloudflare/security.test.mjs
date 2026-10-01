@@ -14,6 +14,7 @@ function harness() {
     Utilities: { Charset: { UTF_8: 'UTF-8' }, computeHmacSha256Signature: (text,key) => [...createHmac('sha256',key).update(text).digest()] },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ setMimeType: () => JSON.parse(s) }) },
     PUBLIC_METHODS_: ['isDemoEnabled'], STUDENT_METHODS_: [],
+    CF_CONFIG_: { bridgeSecret: '', spreadsheetId: '' },
     Backend_: { isDemoEnabled: () => false, validateSession: () => { throw Error('กรุณาเข้าสู่ระบบใหม่'); }, saveVisit: () => { throw Error('must not run'); } }
   });
   vm.runInContext(fs.readFileSync('cloudflare/google-bridge.js', 'utf8'),ctx);
@@ -58,7 +59,7 @@ test('Workers rejects foreign origins, methods and missing configuration', async
   assert.equal((await handleRequest(request('https://health.example', { method:'getSpreadsheet', args:[] }), env)).status,400);
 });
 test('generated bundle exposes only bridge endpoints, not legacy RPC globals', () => {
-  const ctx = vm.createContext({ PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) }, SpreadsheetApp: { getActiveSpreadsheet: () => null } });
+  const ctx = vm.createContext({ PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) }, SpreadsheetApp: { getActiveSpreadsheet: () => null }, CF_CONFIG_: { bridgeSecret: '', spreadsheetId: '' } });
   vm.runInContext(fs.readFileSync('dist/google/Backend.gs','utf8'),ctx);
   assert.equal(typeof ctx.doPost, 'function');
   assert.equal(ctx.getSpreadsheet, undefined);

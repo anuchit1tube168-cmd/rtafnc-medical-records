@@ -1,6 +1,6 @@
 // Replaces matching legacy functions only in the generated Cloudflare backend.
 function getSpreadsheet() {
-  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  const id = config_('SPREADSHEET_ID');
   if (!id) throw new Error('ยังไม่ได้กำหนดฐานข้อมูล');
   return SpreadsheetApp.openById(id);
 }

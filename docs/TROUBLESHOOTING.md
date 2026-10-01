@@ -26,10 +26,15 @@
 ```bash
 # ฝั่ง Cloudflare
 npx wrangler secret put GAS_BRIDGE_SECRET
-# ฝั่ง Google: Project Settings > Script Properties > GAS_BRIDGE_SECRET
+# ฝั่ง Google: build ซ้ำด้วยตัวแปรเดียวกัน
+GAS_BRIDGE_SECRET='<ค่าเดียวกัน>' SPREADSHEET_ID='<id ชีต>' npm run build
 ```
 
 ค่าต้องเหมือนกันทุกตัวอักษร ยาวอย่างน้อย 32 ตัวอักษร และต้องตรงกันทั้งสองฝั่ง
+
+ถ้าตั้งค่าใน Script Properties ของสคริปต์แทน ค่าใน Script Properties จะถูกใช้แทนค่าที่ฝังไว้ในโค้ด เวลาตั้งค่าผิดวิธีให้ลบคีย์นั้นออก ไม่ใช่แก้ค่าให้ตรง เพราะค่าใน Script Properties จะทับค่าที่ฝังไว้เสมอ
+
+ข้อความ `ยังไม่ได้ตั้งค่ารหัสลับของสะพาน` แปลว่าทั้งสองทางไม่มีค่าเลย คือไม่ได้ฝังตอน build และไม่ได้ตั้งใน Script Properties
 
 ## ข้อมูลไม่เปลี่ยนแปลงหลังบันทึก
 

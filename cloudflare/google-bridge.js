@@ -3,9 +3,15 @@ function doGet() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function config_(key) {
+  const props = PropertiesService.getScriptProperties().getProperty(key);
+  if (props) return props;
+  return key === 'GAS_BRIDGE_SECRET' ? CF_CONFIG_.bridgeSecret : CF_CONFIG_.spreadsheetId;
+}
+
 function verifyEnvelope_(envelope) {
   const props = PropertiesService.getScriptProperties();
-  const secret = props.getProperty('GAS_BRIDGE_SECRET');
+  const secret = config_('GAS_BRIDGE_SECRET');
   // Distinct messages so a misconfiguration is diagnosable without leaking the secret.
   if (!secret || secret.length < 32) throw new Error('ยังไม่ได้ตั้งค่ารหัสลับของสะพาน');
   if (typeof envelope.payload !== 'string' || envelope.payload.length > 131072 ||

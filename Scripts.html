@@ -2387,6 +2387,27 @@ function loadAuditLogs() {
   });
 }
 
+function handleExportAuditLogs() {
+  callBackend('exportAuditLogsCsv', [appState.sessionToken], function(csvContent) {
+    if (!csvContent) {
+      showToast('ไม่มีข้อมูลประวัติสำหรับส่งออกไฟล์ Excel', 'warning');
+      return;
+    }
+    // BOM is already added server-side so Thai text stays readable in Excel.
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `audit_logs_${new Date().toISOString().substring(0,10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('ดาวน์โหลดประวัติการแก้ไขข้อมูลเป็นไฟล์ Excel เรียบร้อยแล้ว', 'success');
+  });
+}
+
 // ==========================================
 // ส่วนการตั้งค่าระบบ (Settings Controller)
 // ==========================================

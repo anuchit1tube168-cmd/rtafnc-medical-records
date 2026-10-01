@@ -16,8 +16,8 @@ function isDemoEnabled() { return false; }
 function loginUser(username, password) {
   username = String(username || '').trim().toLowerCase();
   password = String(password || '');
-  if (!username || username.length > 100 || password.length < 12 || password.length > 256) {
-    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ระบบใหม่ต้องตั้งรหัสผ่านอย่างน้อย 12 ตัวอักษร)');
+  if (!username || username.length > 100 || password.length < 7 || password.length > 256) {
+    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ระบบใหม่ต้องตั้งรหัสผ่านอย่างน้อย 7 ตัวอักษร)');
   }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -83,10 +83,27 @@ function getAuditLogs(token) {
   });
 }
 
+// Same rows as getAuditLogs, formatted for Excel. A leading BOM keeps Thai text readable.
+function exportAuditLogsCsv(token) {
+  const rows = getAuditLogs(token);
+  if (!rows.length) return '';
+  const headers = ['LogID', 'Timestamp', 'Username', 'Role', 'ActionType', 'ActionDetails'];
+  const cell = value => {
+    let text = value instanceof Date ? value.toISOString() : String(value === undefined || value === null ? '' : value);
+    // Guard against spreadsheet formula injection when the file is opened in Excel.
+    if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+    if (/[",\n\r]/.test(text)) text = '"' + text.replace(/"/g, '""') + '"';
+    return text;
+  };
+  return '\uFEFF' + [headers.join(',')]
+    .concat(rows.map(row => headers.map(h => cell(row[h])).join(',')))
+    .join('\n');
+}
+
 function changeUserPassword(token, username, password) {
   const session = validateSession(token);
   if (session.role !== 'ADMIN' && session.username !== username) throw new Error('ไม่มีสิทธิ์');
-  if (typeof password !== 'string' || password.length < 12 || password.length > 256) throw new Error('รหัสผ่านต้องยาว 12–256 ตัวอักษร');
+  if (typeof password !== 'string' || password.length < 7 || password.length > 256) throw new Error('รหัสผ่านต้องยาว 7–256 ตัวอักษร');
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName('Users');
   const users = sheet.getDataRange().getValues();

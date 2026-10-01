@@ -70,7 +70,7 @@ function doPost(e) {
       if (medical.includes(input.method) && !['ADMIN', 'MEDICAL'].includes(session.role)) throw new Error('ไม่มีสิทธิ์');
       if (/^(save|update)/.test(input.method) && session.role === 'VIEWER') throw new Error('สิทธิ์อ่านอย่างเดียว');
       if (session.role === 'STAFF' && !['getCurrentUser', 'logoutUser', 'getSettings', 'getDashboardData', 'getServiceRecipients', 'getServiceRecipientById', 'saveServiceRecipient', 'updateServiceRecipientStatus', 'changeUserPassword'].includes(input.method)) throw new Error('ไม่มีสิทธิ์');
-      if (input.method === 'saveUser' && (input.args[1]?.Password && (input.args[1].Password.length < 12 || input.args[1].Password.length > 256))) throw new Error('รหัสผ่านต้องยาว 12–256 ตัวอักษร');
+      if (input.method === 'saveUser' && (input.args[1]?.Password && (input.args[1].Password.length < 7 || input.args[1].Password.length > 256))) throw new Error('รหัสผ่านต้องยาว 7–256 ตัวอักษร');
       if (input.method === 'saveUser' && !['ADMIN', 'MEDICAL', 'STAFF', 'VIEWER'].includes(input.args[1]?.Role)) throw new Error('ไม่มีสิทธิ์กำหนดบทบาทนี้');
       if (input.method === 'saveSettings' && Object.keys(input.args[1] || {}).some(k => /TOKEN|SECRET|PASSWORD|_ID$|SYNC_SOURCE|CF_/.test(k))) throw new Error('กรุณาตั้งค่าการเชื่อมต่อใน Script Properties');
     }

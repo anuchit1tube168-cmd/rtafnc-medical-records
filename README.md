@@ -114,7 +114,7 @@
 | `GAS_BRIDGE_SECRET` | ค่าสุ่มอย่างน้อย 32 ตัวอักษร ต้องตรงกับฝั่ง Cloudflare |
 | `CF_NOTIFICATIONS_ENABLED` | `FALSE` เริ่มต้น ปิดการส่ง Telegram |
 
-รหัสผ่านในระบบใหม่ยาวอย่างน้อย 12 ตัวอักษร และต้องเก็บเป็นค่าแฮช SHA-256 ในชีต `Users`
+รหัสผ่านในระบบใหม่ยาวอย่างน้อย 7 ตัวอักษร และต้องเก็บเป็นค่าแฮช SHA-256 ในชีต `Users`
 
 ดูขั้นตอนติดตั้งทั้งหมดที่ [`docs/INSTALL.md`](docs/INSTALL.md) และปัญหาที่พบบ่อยที่ [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
 

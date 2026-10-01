@@ -50,6 +50,26 @@ test('formula/markup write payload rejected', () => {
   assert.throws(() => ctx.validateWriteInput_({ Name: '<img src=x onerror=alert(1)>' }));
   assert.doesNotThrow(() => ctx.validateWriteInput_({ Name: 'นักเรียน', Value: -1 }));
 });
+test('audit log export is admin-only, escapes separators and neutralises spreadsheet formulas', () => {
+  const token = 'SES-CF-' + 'a'.repeat(36);
+  const auditRow = ['LOG-1', new Date('2026-10-01T04:00:00Z'), 'admin', 'ADMIN', 'UPDATE', '=IMPORTXML("x"), "ก"\nบรรทัด2'];
+  const sheet = data => ({ getDataRange: () => ({ getValues: () => data }) });
+  const tables = {
+    AuditLogs: sheet([['LogID','Timestamp','Username','Role','ActionType','ActionDetails'], auditRow]),
+    Sessions: sheet([['Token','Username','Role','Created','Expires'], [token, 'admin', 'ADMIN', new Date(), new Date(Date.now() + 3600000)]]),
+    Users: sheet([['Username','PasswordHash','Role','FullName','Active'], ['admin', 'x', 'ADMIN', 'ผู้ดูแล', true]])
+  };
+  const ctx = vm.createContext({ getSpreadsheet: () => ({ getSheetByName: name => tables[name] }) });
+  vm.runInContext(fs.readFileSync('cloudflare/google-overrides.js','utf8').replace(/^function getSpreadsheet[\s\S]*?\n}\n/m,''),ctx);
+  tables.Users = sheet([['Username','PasswordHash','Role','FullName','Active'], ['admin', 'x', 'VIEWER', 'ผู้ดูแล', true]]);
+  assert.throws(() => ctx.exportAuditLogsCsv(token), /ไม่มีสิทธิ์/);
+  tables.Users = sheet([['Username','PasswordHash','Role','FullName','Active'], ['admin', 'x', 'ADMIN', 'ผู้ดูแล', true]]);
+  const csv = ctx.exportAuditLogsCsv(token);
+  assert.equal(csv.startsWith('\uFEFF'), true);
+  // Leading apostrophe blocks Excel formula execution; quotes and newlines are escaped.
+  assert.equal(csv.includes('"\'=IMPORTXML(""x""), ""ก""\nบรรทัด2"'), true);
+});
+
 test('Workers rejects foreign origins, methods and missing configuration', async () => {
   const request = (origin, body = {}) => new Request('https://health.example/api/rpc', { method:'POST', headers:{ Origin: origin, 'Content-Type':'application/json' }, body:JSON.stringify(body) });
   assert.equal((await handleRequest(request('https://evil.example'), {})).status,403);

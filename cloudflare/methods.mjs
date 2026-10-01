@@ -10,6 +10,6 @@ export const staffMethods = [
   'dispenseMedicine', 'cancelDispensingAndReturnStock', 'saveContactNotification',
   'getContactNotifications', 'getReferrals', 'saveReferral', 'getFollowUps', 'saveFollowUp',
   'getReports', 'exportReportCsv', 'getUsers', 'saveUser', 'changeUserPassword',
-  'updateUserStatus', 'saveSettings', 'getAuditLogs'
+  'updateUserStatus', 'saveSettings', 'getAuditLogs', 'exportAuditLogsCsv'
 ];
 export const methods = [...publicMethods, ...studentMethods, ...staffMethods];

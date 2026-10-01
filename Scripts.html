@@ -2290,6 +2290,10 @@ function handleSaveUser(e) {
     showToast('กรุณากรอกข้อมูลส่วนสำคัญให้ครบถ้วน', 'warning');
     return;
   }
+  if (pass.length < 7 || pass.length > 256) {
+    showToast('รหัสผ่านต้องมีความยาว 7-256 ตัวอักษร', 'warning');
+    return;
+  }
   
   const submitBtn = document.getElementById('userSubmitBtn');
   submitBtn.disabled = true;
@@ -2324,8 +2328,8 @@ function handleChangePassword(e) {
   const username = document.getElementById('chPassUsername').value;
   const newPass = document.getElementById('chPassNewPassword').value;
   
-  if (newPass.length < 4) {
-    showToast('รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร', 'warning');
+  if (newPass.length < 7) {
+    showToast('รหัสผ่านต้องมีความยาวอย่างน้อย 7 ตัวอักษร', 'warning');
     return;
   }
   

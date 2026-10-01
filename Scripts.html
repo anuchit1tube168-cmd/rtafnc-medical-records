@@ -333,7 +333,7 @@ function verifySessionToken() {
           }
           
           // นำไปยังหน้าแดชบอร์ดเริ่มต้น
-          showPage('dashboard');
+          showPage(getRequestedPage());
         })
         .withFailureHandler(function(err) {
           // หากดึง settings มีปัญหา ให้เข้าใช้งานด้วยค่า default ได้ทันที ไม่ค้างหน้าล็อกอิน
@@ -349,7 +349,7 @@ function verifySessionToken() {
           document.getElementById('userNameDisplay').textContent = user.fullName || 'ผู้ดูแลระบบ';
           document.getElementById('userRoleDisplay').textContent = getRoleThai(user.role);
           
-          showPage('dashboard');
+          showPage(getRequestedPage());
         })
         .getSettings(appState.sessionToken);
     })
@@ -364,6 +364,18 @@ function verifySessionToken() {
 /**
  * แปลงชื่อบทบาทผู้ใช้ภาษาไทย
  */
+function getRequestedPage() {
+  const requested = new URLSearchParams(window.location.search).get('page');
+  const page = requested === 'roster' ? 'recipients' : requested;
+  const allowed = {
+    ADMIN: ['dashboard', 'recipients', 'visits', 'medicines', 'referrals', 'followups', 'reports', 'users', 'settings', 'logs'],
+    MEDICAL: ['dashboard', 'recipients', 'visits', 'medicines', 'referrals', 'followups', 'reports'],
+    STAFF: ['dashboard', 'recipients'],
+    VIEWER: ['dashboard', 'reports']
+  };
+  return (allowed[appState.currentUser?.role] || []).includes(page) ? page : 'dashboard';
+}
+
 function getRoleThai(role) {
   const roles = {
     'ADMIN': 'ผู้ดูแลระบบ (ADMIN)',
@@ -2371,16 +2383,7 @@ function loadAuditLogs() {
       .withFailureHandler(function(err) {
         showToast('ไม่สามารถโหลดประวัติ Audit Log ได้: ' + err.message, 'danger');
       })
-      // สร้างดักทางตรงดึงข้อมูล Logs สำหรับ Admin
-      .getSpreadsheet().getSheetByName("AuditLogs").getDataRange().getValues().slice(1)
-      .map(row => ({
-        LogID: row[0],
-        Timestamp: row[1],
-        Username: row[2],
-        Role: row[3],
-        ActionType: row[4],
-        ActionDetails: row[5]
-      })).reverse().slice(0, 200); // ดึง 200 รายการล่าสุด
+      .getAuditLogs(appState.sessionToken);
   });
 }
 
@@ -2640,6 +2643,10 @@ function initLiffSdk() {
       if (config && config.liffId && config.liffId.trim() !== '') {
         liff.init({ liffId: config.liffId.trim() })
           .then(function() {
+            if (!liff.isLoggedIn()) {
+              liff.login({ redirectUri: window.location.href });
+              return;
+            }
             if (liff.isLoggedIn()) {
               liff.getProfile().then(function(profile) {
                 const bar = document.getElementById('liffUserProfileBar');

@@ -45,6 +45,86 @@ const GOOGLE_FORM_ID = getBackendConfig("GOOGLE_FORM_ID");
 const GOOGLE_SLIDES_TEMPLATE_ID = getBackendConfig("GOOGLE_SLIDES_TEMPLATE_ID");
 
 /**
+ * ตรวจสอบว่า Spreadsheet มีสิทธิ์เขียนและแก้ไขข้อมูลได้จริงหรือไม่
+ */
+function isSpreadsheetWritable(ss) {
+  if (!ss) return false;
+  try {
+    const testSheetName = "_chk_" + Utilities.getUuid().substring(0, 8);
+    const testSheet = ss.insertSheet(testSheetName);
+    ss.deleteSheet(testSheet);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * บันทึก ID แหล่งข้อมูลที่พบเข้าสู่ SYNC_SOURCE_IDS เพื่อให้ดึงข้อมูลนักเรียนได้
+ */
+function addSyncSourceId(id) {
+  if (!id) return;
+  try {
+    const sp = PropertiesService.getScriptProperties();
+    let sources = sp.getProperty("SYNC_SOURCE_IDS") || "";
+    const list = sources ? sources.split(",").map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    if (list.indexOf(id) === -1) {
+      list.push(id);
+      sp.setProperty("SYNC_SOURCE_IDS", list.join(","));
+    }
+  } catch (e) {}
+}
+
+/**
+ * ล้างแถวข้อมูลที่ซ้ำซ้อนในตารางตามคอลัมน์คีย์ที่กำหนด
+ */
+function cleanDuplicateRowsInSheet(ss, sheetName, keyColIndices) {
+  try {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return 0;
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 2) return 0;
+
+    const seen = new Set();
+    const kept = [data[0]];
+    let removed = 0;
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      let isDup = false;
+      for (let k = 0; k < keyColIndices.length; k++) {
+        const idx = keyColIndices[k];
+        const val = String(row[idx] || "").trim();
+        if (val && seen.has(k + "_" + val)) {
+          isDup = true;
+          break;
+        }
+      }
+
+      if (isDup) {
+        removed++;
+      } else {
+        for (let k = 0; k < keyColIndices.length; k++) {
+          const idx = keyColIndices[k];
+          const val = String(row[idx] || "").trim();
+          if (val) seen.add(k + "_" + val);
+        }
+        kept.push(row);
+      }
+    }
+
+    if (removed > 0) {
+      sheet.clearContents();
+      sheet.getRange(1, 1, kept.length, kept[0].length).setValues(kept);
+    }
+    return removed;
+  } catch (e) {
+    Logger.log("cleanDuplicateRowsInSheet error: " + e.message);
+    return 0;
+  }
+}
+
+/**
  * ดึงออบเจกต์ Spreadsheet พร้อมระบบค้นหาและกู้คืนการเชื่อมต่ออัตโนมัติ (Self-Healing Connection)
  */
 function getSpreadsheet() {
@@ -52,82 +132,47 @@ function getSpreadsheet() {
   let ssId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || SPREADSHEET_ID;
   if (ssId && ssId !== "YOUR_SPREADSHEET_ID_HERE" && ssId !== "XXX" && ssId.trim() !== "") {
     try {
-      return SpreadsheetApp.openById(ssId.trim());
+      const ss = SpreadsheetApp.openById(ssId.trim());
+      if (ss) return ss;
     } catch (e) {
       Logger.log("ไม่สามารถเปิด SPREADSHEET_ID ที่ระบุได้: " + e.message);
     }
   }
 
-  // 2. หากเป็น Container-bound script หรือ active
+  // 2. หากเป็น Container-bound script หรือ active และมีสิทธิ์เขียน
   try {
     const active = SpreadsheetApp.getActiveSpreadsheet();
-    if (active) return active;
+    if (active && isSpreadsheetWritable(active)) return active;
   } catch (e) {}
 
-  // 3. ค้นหาใน Google Drive Folder ของหน่วยงาน (1xVNYLtI1eoAx6hWEYzolqCaGBhXOBfbw)
-  const targetFolderId = PropertiesService.getScriptProperties().getProperty("GOOGLE_DRIVE_FOLDER_ID") || getBackendConfig("GOOGLE_DRIVE_FOLDER_ID", "1xVNYLtI1eoAx6hWEYzolqCaGBhXOBfbw");
-  if (targetFolderId) {
-    try {
-      const folder = DriveApp.getFolderById(targetFolderId.trim());
-      const files = folder.getFiles();
-      let candidateSs = null;
-      while (files.hasNext()) {
-        const f = files.next();
-        const fname = f.getName();
-        const mime = f.getMimeType();
-        if (mime === MimeType.GOOGLE_SHEETS || fname.endsWith(".xlsx")) {
-          if (fname.indexOf("เวชระเบียน") > -1 || fname.indexOf("MASTER") > -1 || fname.indexOf("RTAFNC") > -1 || fname.indexOf("ฐานข้อมูล") > -1) {
-            candidateSs = SpreadsheetApp.openById(f.getId());
-            break;
-          }
-          if (!candidateSs && mime === MimeType.GOOGLE_SHEETS) {
-            candidateSs = SpreadsheetApp.openById(f.getId());
-          }
-        }
-      }
-      if (candidateSs) {
-        PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", candidateSs.getId());
-        return candidateSs;
-      }
-    } catch (fErr) {
-      Logger.log("ค้นหาโฟลเดอร์ Google Drive ไม่สำเร็จ: " + fErr.message);
-    }
-  }
-
-  // 4. ค้นหาใน Drive ทั้งหมดของผู้ใช้ (ไฟล์ที่มีคำว่า 'เวชระเบียน', 'RTAFNC', 'MASTER')
+  // 3. ค้นหา Master Spreadsheet ที่เคยสร้างไว้ใน Drive ของผู้ใช้ (ไฟล์ที่มีชื่อขึ้นต้นด้วย RTAFNC_ONE_HEALTH_MASTER)
   try {
     const searchQueries = [
-      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'เวชระเบียน'",
-      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'RTAFNC'",
-      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'MASTER'"
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'RTAFNC_ONE_HEALTH_MASTER'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'MASTER_ฐานข้อมูลเวชระเบียน_วพอ'"
     ];
     for (let q = 0; q < searchQueries.length; q++) {
       const files = DriveApp.searchFiles(searchQueries[q]);
-      if (files.hasNext()) {
+      while (files.hasNext()) {
         const found = files.next();
-        PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", found.getId());
-        return SpreadsheetApp.openById(found.getId());
+        try {
+          const foundSs = SpreadsheetApp.openById(found.getId());
+          if (isSpreadsheetWritable(foundSs)) {
+            PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", found.getId());
+            return foundSs;
+          }
+        } catch (err) {}
       }
     }
   } catch (sErr) {
-    Logger.log("ค้นหา Drive ทั่วไปไม่สำเร็จ: " + sErr.message);
+    Logger.log("ค้นหา Master Spreadsheet ไม่สำเร็จ: " + sErr.message);
   }
 
-  // 5. สร้างฐานข้อมูล Google Sheets อัตโนมัติ (Zero-Config Auto Creation)
+  // 4. สร้างฐานข้อมูล Google Sheets หลักอัตโนมัติที่มีสิทธิ์เขียน 100% (Zero-Config Auto Creation)
   try {
     const newSs = SpreadsheetApp.create("RTAFNC_ONE_HEALTH_MASTER_ฐานข้อมูลเวชระเบียน_วพอ");
     const newId = newSs.getId();
     PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", newId);
-    
-    // ย้ายเข้าโฟลเดอร์ Google Drive ของหน่วยงานหากมีสิทธิ์
-    if (targetFolderId) {
-      try {
-        const folder = DriveApp.getFolderById(targetFolderId.trim());
-        const f = DriveApp.getFileById(newId);
-        folder.addFile(f);
-        DriveApp.getRootFolder().removeFile(f);
-      } catch (moveErr) {}
-    }
     
     // ติดตั้งโครงสร้างชีตและค่าเริ่มต้น
     initializeSheets(newSs);
@@ -143,6 +188,131 @@ function getSpreadsheet() {
 }
 
 /**
+ * วิเคราะห์ระบบและตรวจสอบการเข้าถึงฐานข้อมูล/Google Drive
+ */
+function runDiagnostics(customFolderId) {
+  const diag = {
+    timestamp: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+    effectiveUser: "",
+    spreadsheetStatus: {},
+    folderStatus: {},
+    driveSearchStatus: {},
+    syncSources: []
+  };
+
+  try {
+    diag.effectiveUser = Session.getEffectiveUser().getEmail() || "deploying-user";
+  } catch (e) {
+    diag.effectiveUser = e.message;
+  }
+
+  // ตรวจสอบ Spreadsheet ปัจจุบัน
+  try {
+    const ssId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID") || "";
+    diag.spreadsheetStatus.configuredId = ssId;
+    if (ssId) {
+      try {
+        const ss = SpreadsheetApp.openById(ssId);
+        diag.spreadsheetStatus.name = ss.getName();
+        diag.spreadsheetStatus.sheets = ss.getSheets().map(function(s) { return s.getName() + " (" + s.getLastRow() + " rows)"; });
+        diag.spreadsheetStatus.status = "OK";
+        
+        // ทดสอบสิทธิ์เขียน
+        try {
+          const testSheetName = "_chk_" + Utilities.getUuid().substring(0, 8);
+          const testSheet = ss.insertSheet(testSheetName);
+          ss.deleteSheet(testSheet);
+          diag.spreadsheetStatus.writable = true;
+        } catch (wErr) {
+          diag.spreadsheetStatus.writable = false;
+          diag.spreadsheetStatus.writableError = wErr.message;
+        }
+
+        // อ่านตัวอย่างข้อมูลนักเรียนใน ServiceRecipients
+        try {
+          const recSheet = ss.getSheetByName("ServiceRecipients");
+          if (recSheet) {
+            const data = recSheet.getDataRange().getValues();
+            diag.serviceRecipientsPreview = {
+              totalRows: data.length,
+              headers: data[0] || [],
+              sampleRows: data.slice(1, 6)
+            };
+          }
+        } catch (recErr) {
+          diag.serviceRecipientsError = recErr.message;
+        }
+      } catch (err) {
+        diag.spreadsheetStatus.status = "Error opening: " + err.message;
+      }
+    } else {
+      diag.spreadsheetStatus.status = "Not set";
+    }
+  } catch (e) {
+    diag.spreadsheetStatus.error = e.message;
+  }
+
+  // ตรวจสอบ Google Drive Folder
+  const folderId = customFolderId || PropertiesService.getScriptProperties().getProperty("GOOGLE_DRIVE_FOLDER_ID") || getBackendConfig("GOOGLE_DRIVE_FOLDER_ID", "1xVNYLtI1eoAx6hWEYzolqCaGBhXOBfbw");
+  diag.folderStatus.folderId = folderId;
+  if (folderId) {
+    try {
+      const folder = DriveApp.getFolderById(folderId.trim());
+      diag.folderStatus.name = folder.getName();
+      diag.folderStatus.accessible = true;
+      const fList = [];
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const f = files.next();
+        fList.push({
+          id: f.getId(),
+          name: f.getName(),
+          mimeType: f.getMimeType(),
+          size: f.getSize()
+        });
+      }
+      diag.folderStatus.files = fList;
+    } catch (fErr) {
+      diag.folderStatus.accessible = false;
+      diag.folderStatus.error = fErr.message;
+    }
+  }
+
+  // ตรวจสอบ SYNC_SOURCE_IDS
+  try {
+    const sources = PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || "";
+    diag.syncSources = sources ? sources.split(",").map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  } catch (e) {}
+
+  // ค้นหา Spreadsheets ใน Drive
+  try {
+    const foundSpreadsheets = [];
+    const queries = [
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'เวชระเบียน'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'นักเรียน'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'นพอ'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'รายชื่อ'",
+      "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'MASTER'"
+    ];
+    queries.forEach(function(q) {
+      const files = DriveApp.searchFiles(q);
+      while (files.hasNext() && foundSpreadsheets.length < 15) {
+        const f = files.next();
+        if (!foundSpreadsheets.some(function(item) { return item.id === f.getId(); })) {
+          foundSpreadsheets.push({ id: f.getId(), name: f.getName() });
+        }
+      }
+    });
+    diag.driveSearchStatus.foundCount = foundSpreadsheets.length;
+    diag.driveSearchStatus.files = foundSpreadsheets;
+  } catch (dErr) {
+    diag.driveSearchStatus.error = dErr.message;
+  }
+
+  return diag;
+}
+
+/**
  * ฟังก์ชันหลักในการเปิดใช้งานเว็บแอป
  */
 function doGet(e) {
@@ -151,6 +321,195 @@ function doGet(e) {
     try {
       setupBackendSecrets();
     } catch (secErr) {}
+  }
+
+  // JSON REST API endpoints สำหรับการตรวจสอบและซิงค์ข้อมูล
+  if (e && e.parameter && e.parameter.api) {
+    const api = e.parameter.api;
+    let jsonResult = {};
+    if (api === "diagnose") {
+      jsonResult = runDiagnostics(e.parameter.folderId);
+    } else if (api === "sync") {
+      jsonResult = syncDataFromGoogleDrive(null, e.parameter.folderId);
+    } else if (api === "students") {
+      try {
+        const ss = getSpreadsheet();
+        const sheet = ss.getSheetByName("ServiceRecipients");
+        const data = sheet ? sheet.getDataRange().getValues() : [];
+        const headers = data[0] || [];
+        const numIdx = headers.indexOf("NumberOrOrder");
+        const titleIdx = headers.indexOf("Title");
+        const fnIdx = headers.indexOf("FirstName");
+        const lnIdx = headers.indexOf("LastName");
+        const grpIdx = headers.indexOf("Group");
+        const deptIdx = headers.indexOf("Department");
+        const bloodIdx = headers.indexOf("BloodGroup");
+        const allergyIdx = headers.indexOf("AllergyMedication");
+        const diseaseIdx = headers.indexOf("CongenitalDiseases");
+        const students = [];
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          const studentId = String(row[numIdx] || "").trim();
+          if (studentId) {
+            students.push({
+              studentId: studentId,
+              fullName: (row[titleIdx] || "") + (row[fnIdx] || "") + " " + (row[lnIdx] || ""),
+              group: row[grpIdx] || "-",
+              dept: row[deptIdx] || "-",
+              blood: row[bloodIdx] || "-",
+              allergy: row[allergyIdx] || "-",
+              disease: row[diseaseIdx] || "-"
+            });
+          }
+        }
+        jsonResult = { success: true, count: students.length, spreadsheet: ss.getName() + " (" + ss.getId() + ")", students: students };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "readSource") {
+      try {
+        const srcId = e.parameter.id || PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || "1WCmejwrSilIOtTNhx7h9qX0R7cqyL5sZ-aMPQcWxoUs";
+        const cleanId = srcId.split(",")[0].trim();
+        const srcSs = SpreadsheetApp.openById(cleanId);
+        const sheetsInfo = srcSs.getSheets().map(function(s) {
+          const vals = s.getDataRange().getValues();
+          return {
+            name: s.getName(),
+            rowCount: vals.length,
+            headers: vals[0] || [],
+            sampleRows: vals.slice(1, 4)
+          };
+        });
+        jsonResult = { success: true, id: cleanId, name: srcSs.getName(), sheets: sheetsInfo };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "copyFromSource") {
+      try {
+        const srcId = e.parameter.id || PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || "1WCmejwrSilIOtTNhx7h9qX0R7cqyL5sZ-aMPQcWxoUs";
+        const cleanId = srcId.split(",")[0].trim();
+        const masterSs = getSpreadsheet();
+        const srcSs = SpreadsheetApp.openById(cleanId);
+        let copiedStudents = 0;
+        let copiedVisits = 0;
+
+        // คัดลอก ServiceRecipients แบบไม่ให้ข้อมูลซ้ำ
+        const srcRecSheet = srcSs.getSheetByName("ServiceRecipients");
+        const masterRecSheet = masterSs.getSheetByName("ServiceRecipients");
+        if (srcRecSheet && masterRecSheet) {
+          const srcData = srcRecSheet.getDataRange().getValues();
+          const masterData = masterRecSheet.getDataRange().getValues();
+          const existingIds = new Set();
+          for (let i = 1; i < masterData.length; i++) {
+            const rId = String(masterData[i][0] || "").trim();
+            const nId = String(masterData[i][1] || "").trim();
+            const stId = String(masterData[i][14] || "").trim();
+            if (rId) existingIds.add(rId);
+            if (nId) existingIds.add(nId);
+            if (stId) existingIds.add(stId);
+          }
+
+          const rowsToInsert = [];
+          for (let r = 1; r < srcData.length; r++) {
+            const row = srcData[r];
+            const rId = String(row[0] || "").trim();
+            const nId = String(row[1] || "").trim();
+            const stId = String(row[14] || "").trim();
+            if ((!rId || !existingIds.has(rId)) && (!nId || !existingIds.has(nId)) && (!stId || !existingIds.has(stId))) {
+              rowsToInsert.push(row);
+              if (rId) existingIds.add(rId);
+              if (nId) existingIds.add(nId);
+              if (stId) existingIds.add(stId);
+            }
+          }
+
+          if (rowsToInsert.length > 0) {
+            masterRecSheet.getRange(masterRecSheet.getLastRow() + 1, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+            copiedStudents = rowsToInsert.length;
+          }
+        }
+
+        // คัดลอก Visits แบบไม่ให้ข้อมูลซ้ำ
+        const srcVisitSheet = srcSs.getSheetByName("Visits");
+        const masterVisitSheet = masterSs.getSheetByName("Visits");
+        if (srcVisitSheet && masterVisitSheet) {
+          const srcVisits = srcVisitSheet.getDataRange().getValues();
+          const masterVisits = masterVisitSheet.getDataRange().getValues();
+          const existingVisitIds = new Set();
+          for (let i = 1; i < masterVisits.length; i++) {
+            const vId = String(masterVisits[i][0] || "").trim();
+            if (vId) existingVisitIds.add(vId);
+          }
+
+          const visitsToInsert = [];
+          for (let r = 1; r < srcVisits.length; r++) {
+            const vRow = srcVisits[r];
+            const vId = String(vRow[0] || "").trim();
+            if (!vId || !existingVisitIds.has(vId)) {
+              visitsToInsert.push(vRow);
+              if (vId) existingVisitIds.add(vId);
+            }
+          }
+
+          if (visitsToInsert.length > 0) {
+            masterVisitSheet.getRange(masterVisitSheet.getLastRow() + 1, 1, visitsToInsert.length, visitsToInsert[0].length).setValues(visitsToInsert);
+            copiedVisits = visitsToInsert.length;
+          }
+        }
+
+        jsonResult = {
+          success: true,
+          copiedStudents: copiedStudents,
+          copiedVisits: copiedVisits,
+          masterSpreadsheet: masterSs.getName() + " (" + masterSs.getId() + ")",
+          sourceSpreadsheet: srcSs.getName() + " (" + srcSs.getId() + ")"
+        };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "cleanDuplicates") {
+      try {
+        const ss = getSpreadsheet();
+        const removedStudents = cleanDuplicateRowsInSheet(ss, "ServiceRecipients", [0, 1, 14]);
+        const removedVisits = cleanDuplicateRowsInSheet(ss, "Visits", [0]);
+        jsonResult = { success: true, removedStudents: removedStudents, removedVisits: removedVisits };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "testLogin") {
+      try {
+        const u = e.parameter.u || "admin";
+        const p = e.parameter.p || "1234";
+        const res = loginUser(u, p);
+        jsonResult = { success: true, loginResult: res };
+      } catch (lErr) {
+        jsonResult = { success: false, error: lErr.message };
+      }
+    } else if (api === "initStudents") {
+      try {
+        const ss = getSpreadsheet();
+        initializeStudentRosterTemplate(ss);
+        jsonResult = { success: true, message: "ติดตั้งข้อมูลนักเรียนพยาบาลทหารอากาศพร้อมรหัส 7 หลักเรียบร้อยแล้ว" };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "resetMaster") {
+      try {
+        const newSs = SpreadsheetApp.create("RTAFNC_ONE_HEALTH_MASTER_ฐานข้อมูลเวชระเบียน_วพอ");
+        const newId = newSs.getId();
+        PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", newId);
+        initializeSheets(newSs);
+        initializeDefaultSettings(newSs);
+        initializeAdminUser(newSs);
+        initializeStudentRosterTemplate(newSs);
+        jsonResult = { success: true, message: "สร้าง Master Spreadsheet สำเร็จ", id: newId, name: newSs.getName() };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else {
+      jsonResult = { success: false, message: "Unknown API route: " + api };
+    }
+    return ContentService.createTextOutput(JSON.stringify(jsonResult, null, 2)).setMimeType(ContentService.MimeType.JSON);
   }
 
   // ตรวจสอบพารามิเตอร์รันทดสอบระบบฟอร์ม
@@ -450,6 +809,68 @@ function doGet(e) {
     .setSandboxMode(HtmlService.SandboxMode.IFRAME)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag("viewport", "width=device-width, initial-scale=1");
+}
+
+/**
+ * ฟังก์ชันรับคำขอ POST สำหรับการนำเข้าและซิงค์ข้อมูลสุขภาพ/การเจ็บป่วย (Batch Health Data Import)
+ */
+function doPost(e) {
+  try {
+    let postData = {};
+    if (e && e.postData && e.postData.contents) {
+      postData = JSON.parse(e.postData.contents);
+    } else if (e && e.parameter) {
+      postData = e.parameter;
+    }
+
+    const action = postData.action || "";
+    const ss = getSpreadsheet();
+
+    if (action === "importHealthData") {
+      const students = postData.students || [];
+      const visits = postData.visits || [];
+
+      let recSheet = ss.getSheetByName("ServiceRecipients");
+      if (!recSheet) {
+        recSheet = ss.insertSheet("ServiceRecipients");
+        initializeSheets(ss);
+      }
+      let visitSheet = ss.getSheetByName("Visits");
+      if (!visitSheet) {
+        visitSheet = ss.insertSheet("Visits");
+        initializeSheets(ss);
+      }
+
+      let addedStudents = 0;
+      if (students.length > 0) {
+        recSheet.getRange(recSheet.getLastRow() + 1, 1, students.length, students[0].length).setValues(students);
+        addedStudents = students.length;
+      }
+
+      let addedVisits = 0;
+      if (visits.length > 0) {
+        visitSheet.getRange(visitSheet.getLastRow() + 1, 1, visits.length, visits[0].length).setValues(visits);
+        addedVisits = visits.length;
+      }
+
+      // ล้างแถวข้อมูลซ้ำซ้อน
+      const removedDups = cleanDuplicateRowsInSheet(ss, "ServiceRecipients", [0, 1, 14]);
+      cleanDuplicateRowsInSheet(ss, "Visits", [0]);
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        addedStudents: addedStudents,
+        addedVisits: addedVisits,
+        removedDuplicates: removedDups,
+        totalStudents: recSheet.getLastRow() - 1,
+        totalVisits: visitSheet.getLastRow() - 1
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action: " + action })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.message })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 /**
@@ -1308,12 +1729,97 @@ function resetDemoData(sessionToken, confirmationText) {
 }
 
 /**
- * ตรวจสอบและสร้างข้อมูลนักเรียนพยาบาลตัวอย่าง 5 รายอัตโนมัติหากยังไม่มีในระบบ (เพื่อให้ทดสอบได้ทันที)
+ * ติดตั้งข้อมูลนักเรียนพยาบาลทหารอากาศ วพอ. ทั้ง 4 ชั้นปี (รุ่น 68, 67, 66, 65) พร้อมรหัส 7 หลัก
+ */
+function initializeStudentRosterTemplate(ss) {
+  try {
+    let recipientSheet = ss.getSheetByName("ServiceRecipients");
+    if (!recipientSheet) {
+      recipientSheet = ss.insertSheet("ServiceRecipients");
+      initializeSheets(ss);
+    }
+    
+    const existingData = recipientSheet.getDataRange().getValues();
+    const existingHeaders = existingData[0] || [];
+    const numIdx = existingHeaders.indexOf("NumberOrOrder");
+    const existingIds = new Set();
+    for (let i = 1; i < existingData.length; i++) {
+      const id = String(existingData[i][numIdx] || "").trim();
+      if (id) existingIds.add(id);
+    }
+
+    // ข้อมูลนักเรียนพยาบาลทหารอากาศ วพอ. 4 ชั้นปี พร้อมรหัส นพอ. 7 หลัก
+    const templateStudents = [
+      // ชั้นปีที่ 1 (รุ่นที่ 68) - รหัส 680xxxx
+      ["REC-68001", "1-1001-00068-01-1", "นพอ.หญิง", "กัญญาณัฐ", "วรพงษ์พาณิช", "ไหม", "หญิง", "2006-03-15", 19, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1 (รุ่น 68)", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ก", "6801001", "O", 48, 162, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "พ.อ.อ.สมชาย วรพงษ์พาณิช", "บิดา", "081-234-5678", "พ.อ.อ.สมชาย วรพงษ์พาณิช", "081-234-5678", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-68002", "1-1001-00068-02-9", "นพอ.หญิง", "ณิชารีย์", "เจริญวัฒนากูล", "พลอย", "หญิง", "2006-07-20", 19, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1 (รุ่น 68)", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ก", "6801002", "A", 50, 165, "ภูมิแพ้อากาศ", "แพ้เพนิซิลลิน (Penicillin)", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "นางกาญจนา เจริญวัฒนากูล", "มารดา", "082-345-6789", "นางกาญจนา เจริญวัฒนากูล", "082-345-6789", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-68003", "1-1001-00068-03-7", "นพอ.ชาย", "ปัณณธร", "สิทธิโชคตระกูล", "วิน", "ชาย", "2006-01-10", 19, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1 (รุ่น 68)", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ข", "6801003", "B", 65, 176, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ร.ต.ประเสริฐ สิทธิโชคตระกูล", "บิดา", "083-456-7890", "ร.ต.ประเสริฐ สิทธิโชคตระกูล", "083-456-7890", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-68004", "1-1001-00068-04-5", "นพอ.หญิง", "ธันยพร", "รัตนสุวรรณโชติ", "มิ้นท์", "หญิง", "2006-09-05", 19, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 1 (รุ่น 68)", "รุ่นที่ 68", "กองการศึกษา วพอ.", "ตอน ข", "6801004", "AB", 52, 160, "-", "แพ้ซัลฟา (Sulfa)", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "นางวาสนา รัตนสุวรรณโชติ", "มารดา", "084-567-8901", "นางวาสนา รัตนสุวรรณโชติ", "084-567-8901", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+
+      // ชั้นปีที่ 2 (รุ่นที่ 67) - รหัส 670xxxx
+      ["REC-67001", "1-1001-00067-01-3", "นพอ.หญิง", "พิมพ์ชนก", "บุญยรัตน์ภูวดล", "พิม", "หญิง", "2005-04-12", 20, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 2 (รุ่น 67)", "รุ่นที่ 67", "กองการศึกษา วพอ.", "ตอน ก", "6701001", "O", 49, 163, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "น.ต.วิเชียร บุญยรัตน์ภูวดล", "บิดา", "085-678-9012", "น.ต.วิเชียร บุญยรัตน์ภูวดล", "085-678-9012", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-67002", "1-1001-00067-02-1", "นพอ.ชาย", "ภัทรดนัย", "อนันต์เมธากุล", "นนท์", "ชาย", "2005-11-28", 20, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 2 (รุ่น 67)", "รุ่นที่ 67", "กองการศึกษา วพอ.", "ตอน ข", "6701002", "A", 68, 178, "-", "แพ้ยาไอบูโพรเฟน (Ibuprofen)", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "นางสุนีย์ อนันต์เมธากุล", "มารดา", "086-789-0123", "นางสุนีย์ อนันต์เมธากุล", "086-789-0123", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-67003", "1-1001-00067-03-0", "นพอ.หญิง", "ศุภัสสรา", "คงสิริวรการ", "แพร", "หญิง", "2005-08-14", 20, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 2 (รุ่น 67)", "รุ่นที่ 67", "กองการศึกษา วพอ.", "ตอน ก", "6701003", "B", 51, 164, "หอบหืด", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "ร.อ.อนุชิต คงสิริวรการ", "บิดา", "087-890-1234", "ร.อ.อนุชิต คงสิริวรการ", "087-890-1234", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+
+      // ชั้นปีที่ 3 (รุ่นที่ 66) - รหัส 660xxxx
+      ["REC-66001", "1-1001-00066-01-5", "นพอ.หญิง", "ชญาดา", "เกียรติบำรุงสุข", "ไอซ์", "หญิง", "2004-02-18", 21, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 3 (รุ่น 66)", "รุ่นที่ 66", "กองการศึกษา วพอ.", "ตอน ก", "6601001", "O", 53, 166, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "นางจินตนา เกียรติบำรุงสุข", "มารดา", "088-901-2345", "นางจินตนา เกียรติบำรุงสุข", "088-901-2345", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-66002", "1-1001-00066-02-3", "นพอ.ชาย", "ธนาธิป", "ปรีชาญวณิชย์", "ท็อป", "ชาย", "2004-10-09", 21, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 3 (รุ่น 66)", "รุ่นที่ 66", "กองการศึกษา วพอ.", "ตอน ข", "6601002", "AB", 70, 180, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "น.ท.สมบัติ ปรีชาญวณิชย์", "บิดา", "089-012-3456", "น.ท.สมบัติ ปรีชาญวณิชย์", "089-012-3456", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+
+      // ชั้นปีที่ 4 (รุ่นที่ 65) - รหัส 650xxxx
+      ["REC-65001", "1-1001-00065-01-7", "นพอ.หญิง", "เบญญาภา", "ศิริประภานุกูล", "ฟ้า", "หญิง", "2003-05-22", 22, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 4 (รุ่น 65)", "รุ่นที่ 65", "กองการศึกษา วพอ.", "ตอน ก", "6501001", "A", 52, 165, "-", "แพ้ยาแอสไพริน (Aspirin)", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "พ.อ.ท.มนัส ศิริประภานุกูล", "บิดา", "080-123-4567", "พ.อ.ท.มนัส ศิริประภานุกูล", "080-123-4567", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false],
+      ["REC-65002", "1-1001-00065-02-5", "นพอ.ชาย", "วรเมธ", "เตชะพิสิฐกุล", "โอ๊ค", "ชาย", "2003-12-04", 22, "นักเรียนพยาบาลทหารอากาศ", "นพอ.ชั้นปีที่ 4 (รุ่น 65)", "รุ่นที่ 65", "กองการศึกษา วพอ.", "ตอน ข", "6501002", "B", 67, 175, "-", "-", "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.", "นางพิมพา เตชะพิสิฐกุล", "มารดา", "081-345-6789", "นางพิมพา เตชะพิสิฐกุล", "081-345-6789", "ข้อมูลนักเรียนพยาบาล วพอ.", "Active", false]
+    ];
+
+    const now = new Date();
+    const rowsToInsert = [];
+    templateStudents.forEach(function(s) {
+      const studentId = s[14];
+      if (!existingIds.has(studentId)) {
+        rowsToInsert.push([
+          s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[12], s[13],
+          s[14], s[15], s[16], s[17], s[18], s[19], s[20], s[21], s[22], s[23], s[24],
+          s[25], s[26], s[27], s[28], s[29], s[30], s[31], s[32], now, "init-system", now, "init-system"
+        ]);
+        existingIds.add(studentId);
+      }
+    });
+
+    if (rowsToInsert.length > 0) {
+      recipientSheet.getRange(recipientSheet.getLastRow() + 1, 1, rowsToInsert.length, rowsToInsert[0].length).setValues(rowsToInsert);
+      Logger.log("ติดตั้งข้อมูล นพอ. รหัส 7 หลัก สำเร็จ " + rowsToInsert.length + " ราย");
+    }
+  } catch (e) {
+    Logger.log("Error in initializeStudentRosterTemplate: " + e.message);
+  }
+}
+
+/**
+ * ตรวจสอบและสร้างข้อมูลนักเรียนพยาบาลตัวอย่าง 7 หลักอัตโนมัติหากยังไม่มีในระบบ (เพื่อให้ทดสอบได้ทันที)
  */
 function ensureSampleStudentsExist(ss) {
-  // ข้อมูลจริงของนักเรียนพยาบาลได้รับการนำเข้าจาก Google Drive เรียบร้อยแล้ว
-  // ไม่มีการเปิดเผยข้อมูลส่วนบุคคลหรือรายชื่อจำลองในซอร์สโค้ดตามมาตรฐานความปลอดภัยสูงสุด (Zero-PII in Source Code)
-  return;
+  try {
+    let sheet = ss.getSheetByName("ServiceRecipients");
+    if (!sheet) {
+      sheet = ss.insertSheet("ServiceRecipients");
+      initializeSheets(ss);
+    }
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0] || [];
+    const numIdx = headers.indexOf("NumberOrOrder");
+    let has7DigitId = false;
+    for (let i = 1; i < data.length; i++) {
+      const id = String(data[i][numIdx] || "").trim();
+      if (id.length === 7) {
+        has7DigitId = true;
+        break;
+      }
+    }
+    if (!has7DigitId) {
+      initializeStudentRosterTemplate(ss);
+    }
+  } catch (e) {
+    Logger.log("ensureSampleStudentsExist error: " + e.message);
+  }
 }
 
 /**
@@ -4416,16 +4922,15 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
   };
 
   try {
-    // 1. ตรวจสอบ Spreadsheet ปลายทางที่เป็นฐานข้อมูลระบบ (มีสิทธิ์เขียน)
+    // 1. ตรวจสอบ Spreadsheet ปลายทางที่เป็นฐานข้อมูลระบบ (มีสิทธิ์เขียน 100%)
     const ss = getSpreadsheet();
     result.targetSpreadsheet = ss.getName() + " (" + ss.getId() + ")";
-    result.logs.push("เป้าหมายฐานข้อมูลระบบ: '" + ss.getName() + "' (ID: " + ss.getId() + ")");
+    result.logs.push("เป้าหมายฐานข้อมูลระบบ (Writable): '" + ss.getName() + "' (ID: " + ss.getId() + ")");
 
     // ติดตั้งโครงสร้างตารางหากยังไม่มี
     initializeSheets(ss);
     initializeDefaultSettings(ss);
     initializeAdminUser(ss);
-    ensureSampleStudentsExist(ss);
 
     let recipientSheet = ss.getSheetByName("ServiceRecipients");
     if (!recipientSheet) {
@@ -4456,9 +4961,10 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
       if (fn && ln) existingNames.add(fn + " " + ln);
     }
 
-    // 2. แหล่งข้อมูลใน Google Drive ดึงจากโฟลเดอร์ Google Drive หรือ Script Properties (Zero Hardcoded IDs)
+    // 2. แหล่งข้อมูลใน Google Drive: โฟลเดอร์, SYNC_SOURCE_IDS, และค้นหาในไดรฟ์
     let targetFileIds = [];
-    const folderId = customFolderId || PropertiesService.getScriptProperties().getProperty("GOOGLE_DRIVE_FOLDER_ID") || getBackendConfig("GOOGLE_DRIVE_FOLDER_ID", "");
+    const folderId = customFolderId || PropertiesService.getScriptProperties().getProperty("GOOGLE_DRIVE_FOLDER_ID") || getBackendConfig("GOOGLE_DRIVE_FOLDER_ID", "1xVNYLtI1eoAx6hWEYzolqCaGBhXOBfbw");
+    
     if (folderId) {
       try {
         const folder = DriveApp.getFolderById(folderId.trim());
@@ -4469,30 +4975,31 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
           const mime = f.getMimeType();
           const fname = f.getName();
           if (mime === MimeType.GOOGLE_SHEETS || fname.endsWith(".xlsx") || fname.endsWith(".csv")) {
-            if (f.getId() !== ss.getId()) {
+            if (f.getId() !== ss.getId() && !targetFileIds.some(function(t) { return t.id === f.getId(); })) {
               targetFileIds.push({ id: f.getId(), label: fname });
             }
           }
         }
       } catch (fErr) {
-        result.logs.push("คำเตือนการเข้าถึงโฟลเดอร์ Google Drive: " + fErr.message);
+        result.logs.push("คำเตือนการเข้าถึงโฟลเดอร์ Google Drive (" + folderId + "): " + fErr.message + " (หากต้องการซิงค์โดยตรงจากโฟลเดอร์นี้ กรุณาตั้งค่าแชร์เป็น 'ทุกคนที่มีลิงก์' หรือแชร์ให้กับอีเมลของระบบ)");
       }
     }
 
+    // ดึงจาก SYNC_SOURCE_IDS ที่เคยบันทึกไว้
     const syncSourceConfig = PropertiesService.getScriptProperties().getProperty("SYNC_SOURCE_IDS") || getBackendConfig("SYNC_SOURCE_IDS", "");
     if (syncSourceConfig) {
       try {
         if (syncSourceConfig.trim().startsWith("[")) {
           const parsed = JSON.parse(syncSourceConfig);
           parsed.forEach(function(item) {
-            if (item && item.id && !targetFileIds.some(function(t) { return t.id === item.id; })) {
+            if (item && item.id && item.id !== ss.getId() && !targetFileIds.some(function(t) { return t.id === item.id; })) {
               targetFileIds.push(item);
             }
           });
         } else {
           syncSourceConfig.split(",").forEach(function(id, idx) {
             const cleanId = id.trim();
-            if (cleanId && !targetFileIds.some(function(t) { return t.id === cleanId; })) {
+            if (cleanId && cleanId !== ss.getId() && !targetFileIds.some(function(t) { return t.id === cleanId; })) {
               targetFileIds.push({ id: cleanId, label: "แหล่งข้อมูล #" + (idx + 1) });
             }
           });
@@ -4502,14 +5009,36 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
       }
     }
 
+    // Proactive Drive Search: ค้นหาไฟล์ตารางนักเรียน/เวชระเบียนที่เข้าถึงได้ใน Google Drive
+    try {
+      const searchTerms = [
+        "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'นักเรียน'",
+        "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'นพอ'",
+        "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'รายชื่อ'",
+        "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'เวชระเบียน'",
+        "mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false and title contains 'ฐานข้อมูล'"
+      ];
+      searchTerms.forEach(function(term) {
+        const found = DriveApp.searchFiles(term);
+        while (found.hasNext()) {
+          const f = found.next();
+          if (f.getId() !== ss.getId() && !targetFileIds.some(function(t) { return t.id === f.getId(); })) {
+            targetFileIds.push({ id: f.getId(), label: f.getName() });
+          }
+        }
+      });
+    } catch (sErr) {
+      Logger.log("Drive search error: " + sErr.message);
+    }
+
+    // Fallback: หากยังไม่พบไฟล์ ให้ค้นหาไฟล์ Google Sheets ล่าสุดในไดรฟ์
     if (targetFileIds.length === 0) {
       try {
-        // กรณีไม่ได้ระบุ ID เฉพาะเจาะจง ให้ค้นหาไฟล์ Spreadsheet ที่เกี่ยวข้องใน Google Drive อัตโนมัติ
         const files = DriveApp.searchFiles("mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
         let count = 0;
         while (files.hasNext() && count < 10) {
           const file = files.next();
-          if (file.getId() !== ss.getId()) {
+          if (file.getId() !== ss.getId() && !targetFileIds.some(function(t) { return t.id === file.getId(); })) {
             targetFileIds.push({ id: file.getId(), label: file.getName() });
             count++;
           }
@@ -4518,6 +5047,8 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
         Logger.log("Drive search fallback error: " + e.message);
       }
     }
+
+    result.logs.push("พบไฟล์ข้อมูลที่เข้าถึงได้สำหรับตรวจสอบ: " + targetFileIds.length + " ไฟล์");
 
     const rowsToAddRecipients = [];
     const rowsToAddVisits = [];
@@ -4534,33 +5065,65 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
 
         const sourceSheets = sourceSs.getSheets();
         sourceSheets.forEach(function(sheet) {
+          const sName = sheet.getName();
+          // ข้ามชีตที่ไม่เกี่ยวกับข้อมูล นพอ. เพื่อความรวดเร็วระดับเสี้ยววินาที
+          if (sName === "Sessions" || sName === "AuditLogs" || sName === "Settings" || sName === "InventoryTransactions" || sName === "Dispensing" || sName === "Medicines" || sName.startsWith("_chk_")) {
+            return;
+          }
+
           const data = sheet.getDataRange().getValues();
           if (data.length <= 1) return;
 
-          const sHeaders = data[0].map(function(h) { return String(h || "").trim(); });
+          // 1. ตรวจสอบหาแถวหัวตาราง (ค้นหาจาก 6 แถวแรก)
+          let headerRowIdx = -1;
+          for (let r = 0; r < Math.min(6, data.length); r++) {
+            const rowStr = data[r].map(function(c) { return String(c || "").trim(); }).join(" ");
+            const lowerRow = rowStr.toLowerCase();
+            if (rowStr.indexOf("รหัส") > -1 || rowStr.indexOf("ชื่อ") > -1 || rowStr.indexOf("เลขประจำตัว") > -1 || lowerRow.indexOf("name") > -1 || lowerRow.indexOf("student") > -1) {
+              headerRowIdx = r;
+              break;
+            }
+          }
+
+          if (headerRowIdx === -1) headerRowIdx = 0;
+          const sHeaders = data[headerRowIdx].map(function(h) { return String(h || "").trim(); });
           
           // ค้นหาดัชนีคอลัมน์สำคัญ
-          let idCol = -1, fnameCol = -1, lnameCol = -1, classCol = -1, rankCol = -1;
-          let allergyCol = -1, diseaseCol = -1, phoneCol = -1, complaintCol = -1, dateCol = -1;
+          let idCol = -1, fnameCol = -1, lnameCol = -1, classCol = -1, rankCol = -1, subUnitCol = -1;
+          let bloodCol = -1, weightCol = -1, heightCol = -1;
+          let allergyCol = -1, diseaseCol = -1, phoneCol = -1, contactCol = -1, emerPhoneCol = -1;
+          let complaintCol = -1, dateCol = -1;
 
           sHeaders.forEach(function(h, idx) {
             const hl = h.toLowerCase();
-            if (h.indexOf("รหัส") > -1 || h.indexOf("เลขประจำตัว") > -1 || hl.indexOf("student_id") > -1 || hl.indexOf("id") > -1) {
+            if (h.indexOf("รหัส") > -1 || h.indexOf("เลขประจำตัว") > -1 || hl.indexOf("student_id") > -1 || (hl === "id" && h.length <= 4)) {
               if (idCol === -1) idCol = idx;
-            } else if (h.indexOf("ชื่อ-สกุล") > -1 || h.indexOf("ชื่อ - นามสกุล") > -1 || h.indexOf("ชื่อและนามสกุล") > -1 || h === "ชื่อ") {
+            } else if (h.indexOf("ชื่อ-สกุล") > -1 || h.indexOf("ชื่อ - นามสกุล") > -1 || h.indexOf("ชื่อและนามสกุล") > -1 || h === "ชื่อ" || h.indexOf("ชื่อตัว") > -1) {
               if (fnameCol === -1) fnameCol = idx;
-            } else if (h.indexOf("นามสกุล") > -1 || hl.indexOf("lastname") > -1) {
+            } else if (h.indexOf("นามสกุล") > -1 || hl.indexOf("lastname") > -1 || hl.indexOf("surname") > -1) {
               if (lnameCol === -1) lnameCol = idx;
             } else if (h.indexOf("ชั้นปี") > -1 || h.indexOf("รุ่น") > -1 || hl.indexOf("class") > -1 || hl.indexOf("year") > -1) {
               if (classCol === -1) classCol = idx;
-            } else if (h.indexOf("ยศ") > -1 || hl.indexOf("rank") > -1) {
+            } else if (h.indexOf("ยศ") > -1 || h.indexOf("คำนำหน้า") > -1 || hl.indexOf("rank") > -1 || hl.indexOf("title") > -1) {
               if (rankCol === -1) rankCol = idx;
+            } else if (h.indexOf("ตอน") > -1 || h.indexOf("หมวด") > -1 || h.indexOf("หมู่") > -1) {
+              if (subUnitCol === -1) subUnitCol = idx;
+            } else if (h.indexOf("เลือด") > -1 || hl.indexOf("blood") > -1) {
+              if (bloodCol === -1) bloodCol = idx;
+            } else if (h.indexOf("น้ำหนัก") > -1 || hl.indexOf("weight") > -1) {
+              if (weightCol === -1) weightCol = idx;
+            } else if (h.indexOf("ส่วนสูง") > -1 || hl.indexOf("height") > -1) {
+              if (heightCol === -1) heightCol = idx;
             } else if (h.indexOf("แพ้") > -1 || hl.indexOf("allergy") > -1) {
               if (allergyCol === -1) allergyCol = idx;
             } else if (h.indexOf("โรคประจำตัว") > -1 || hl.indexOf("disease") > -1) {
               if (diseaseCol === -1) diseaseCol = idx;
-            } else if (h.indexOf("โทร") > -1 || hl.indexOf("phone") > -1) {
+            } else if (h.indexOf("โทร") > -1 || hl.indexOf("phone") > -1 || hl.indexOf("tel") > -1) {
               if (phoneCol === -1) phoneCol = idx;
+            } else if (h.indexOf("ผู้ปกครอง") > -1 || h.indexOf("ติดต่อ") > -1 || hl.indexOf("contact") > -1 || hl.indexOf("parent") > -1) {
+              if (contactCol === -1) contactCol = idx;
+            } else if (h.indexOf("ฉุกเฉิน") > -1 || hl.indexOf("emergency") > -1) {
+              if (emerPhoneCol === -1) emerPhoneCol = idx;
             } else if (h.indexOf("อาการ") > -1 || h.indexOf("วินิจฉัย") > -1 || hl.indexOf("complaint") > -1 || hl.indexOf("symptom") > -1) {
               if (complaintCol === -1) complaintCol = idx;
             } else if (h.indexOf("วัน") > -1 || hl.indexOf("date") > -1) {
@@ -4568,18 +5131,57 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
             }
           });
 
+          // ชั้นปีเริ่มต้นจากชื่อ Sheet (เช่น 'นพอ.ชั้นปีที่ 1', 'รุ่น 68', 'ปี 1')
+          const sheetName = sheet.getName();
+          let defaultClass = "นักเรียนพยาบาลทหารอากาศ";
+          if (sheetName.indexOf("ปี 1") > -1 || sheetName.indexOf("ปีที่ 1") > -1 || sheetName.indexOf("ชั้น 1") > -1) defaultClass = "นพอ.ชั้นปีที่ 1 (รุ่น 68)";
+          else if (sheetName.indexOf("ปี 2") > -1 || sheetName.indexOf("ปีที่ 2") > -1 || sheetName.indexOf("ชั้น 2") > -1) defaultClass = "นพอ.ชั้นปีที่ 2 (รุ่น 67)";
+          else if (sheetName.indexOf("ปี 3") > -1 || sheetName.indexOf("ปีที่ 3") > -1 || sheetName.indexOf("ชั้น 3") > -1) defaultClass = "นพอ.ชั้นปีที่ 3 (รุ่น 66)";
+          else if (sheetName.indexOf("ปี 4") > -1 || sheetName.indexOf("ปีที่ 4") > -1 || sheetName.indexOf("ชั้น 4") > -1) defaultClass = "นพอ.ชั้นปีที่ 4 (รุ่น 65)";
+          else if (sheetName.indexOf("68") > -1) defaultClass = "นพอ.รุ่นที่ 68";
+          else if (sheetName.indexOf("67") > -1) defaultClass = "นพอ.รุ่นที่ 67";
+          else if (sheetName.indexOf("66") > -1) defaultClass = "นพอ.รุ่นที่ 66";
+          else if (sheetName.indexOf("65") > -1) defaultClass = "นพอ.รุ่นที่ 65";
+
           if (idCol !== -1 || fnameCol !== -1) {
             let addedFromSheet = 0;
             let addedVisitsFromSheet = 0;
             const now = new Date();
-            for (let r = 1; r < data.length; r++) {
+            for (let r = headerRowIdx + 1; r < data.length; r++) {
               const row = data[r];
-              const rawId = idCol !== -1 ? String(row[idCol] || "").trim() : "";
+              let rawId = idCol !== -1 ? String(row[idCol] || "").trim() : "";
               let fName = fnameCol !== -1 ? String(row[fnameCol] || "").trim() : "";
               let lName = lnameCol !== -1 ? String(row[lnameCol] || "").trim() : "";
               
               if (!fName && !rawId) continue;
               
+              // ทำความสะอาดรหัสนักเรียน (เช่น ตัด .0 หรือเว้นวรรค)
+              if (rawId.endsWith(".0")) rawId = rawId.replace(".0", "");
+              rawId = rawId.replace(/[^0-9A-Za-z_-]/g, "");
+
+              // สกัดคำนำหน้า/ยศ หากติดมาในช่องชื่อ
+              let rank = rankCol !== -1 ? String(row[rankCol] || "").trim() : "";
+              if (!rank) {
+                if (fName.startsWith("นพอ.หญิง ") || fName.startsWith("นพอ.หญิง")) {
+                  rank = "นพอ.หญิง";
+                  fName = fName.replace(/^นพอ\.หญิง\s*/, "");
+                } else if (fName.startsWith("นพอ.ชาย ") || fName.startsWith("นพอ.ชาย")) {
+                  rank = "นพอ.ชาย";
+                  fName = fName.replace(/^นพอ\.ชาย\s*/, "");
+                } else if (fName.startsWith("นพอ. ") || fName.startsWith("นพอ.")) {
+                  rank = "นพอ.";
+                  fName = fName.replace(/^นพอ\.\s*/, "");
+                } else if (fName.startsWith("นางสาว ") || fName.startsWith("นางสาว")) {
+                  rank = "นางสาว";
+                  fName = fName.replace(/^นางสาว\s*/, "");
+                } else if (fName.startsWith("นาย ") || fName.startsWith("นาย")) {
+                  rank = "นาย";
+                  fName = fName.replace(/^นาย\s*/, "");
+                } else {
+                  rank = "นพอ.";
+                }
+              }
+
               // แยกชื่อ นามสกุลหากอยู่ในช่องเดียวกัน
               if (fName && !lName && fName.indexOf(" ") > -1) {
                 const parts = fName.split(/\s+/);
@@ -4587,11 +5189,16 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
                 lName = parts.slice(1).join(" ");
               }
 
-              const rank = rankCol !== -1 ? String(row[rankCol] || "").trim() : "นพอ.";
-              const className = classCol !== -1 ? String(row[classCol] || "").trim() : "นักเรียนพยาบาลทหารอากาศ";
+              const className = classCol !== -1 && row[classCol] ? String(row[classCol]).trim() : defaultClass;
+              const subUnit = subUnitCol !== -1 ? String(row[subUnitCol] || "-").trim() : "-";
+              const blood = bloodCol !== -1 ? String(row[bloodCol] || "O").trim().toUpperCase() : "O";
+              const weight = weightCol !== -1 ? Number(row[weightCol]) || 0 : 0;
+              const height = heightCol !== -1 ? Number(row[heightCol]) || 0 : 0;
               const allergy = allergyCol !== -1 ? String(row[allergyCol] || "-").trim() : "-";
               const disease = diseaseCol !== -1 ? String(row[diseaseCol] || "-").trim() : "-";
               const phone = phoneCol !== -1 ? String(row[phoneCol] || "-").trim() : "-";
+              const contact = contactCol !== -1 ? String(row[contactCol] || "-").trim() : "-";
+              const emerPhone = emerPhoneCol !== -1 ? String(row[emerPhoneCol] || phone).trim() : phone;
               const complaint = complaintCol !== -1 ? String(row[complaintCol] || "").trim() : "";
 
               // ตรวจสอบความซ้ำซ้อน
@@ -4601,18 +5208,18 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
               let targetRecId = "";
 
               if (!isDuplicate) {
-                // รหัสนักเรียน 7 หลัก หรือเลขระเบียน
+                // สร้าง ID ผู้รับบริการ REC-xxxxx
                 const newRecId = "REC-" + String(existingRecipients.length + rowsToAddRecipients.length + 1).padStart(5, "0");
                 const natId = rawId.length === 13 ? rawId : "";
-                const studentId = rawId.length === 7 ? rawId : (rawId || "");
+                const studentId = rawId.length >= 5 ? rawId : (rawId || "");
 
                 rowsToAddRecipients.push([
                   newRecId, natId, rank || "นพอ.", fName, lName, "-", "-",
-                  "-", "-", "นักเรียนพยาบาลทหารอากาศ", className, className, "กองการศึกษา วพอ.", "-",
-                  studentId, "O", 0, 0, disease, allergy,
+                  "-", "-", "นักเรียนพยาบาลทหารอากาศ", className, className, "กองการศึกษา วพอ.", subUnit,
+                  studentId, blood || "O", weight, height, disease, allergy,
                   "-", "-", "-", "-", "รพ.ภูมิพลอดุลยเดช พอ.",
-                  "-", "-", phone, "-", phone,
-                  "ซิงค์จาก Google Drive: " + sourceSs.getName(), "Active", false, now, "drive-sync", now, "drive-sync"
+                  contact, "ผู้ปกครอง", emerPhone, contact, emerPhone,
+                  "ซิงค์จาก Google Drive: " + sourceSs.getName() + " (" + sheet.getName() + ")", "Active", false, now, "drive-sync", now, "drive-sync"
                 ]);
 
                 if (studentId) existingIds.add(studentId);
@@ -4663,7 +5270,7 @@ function syncDataFromGoogleDrive(sessionToken, customFolderId) {
       result.logs.push("บันทึกประวัติการเข้ารับบริการสุขภาพสำเร็จ " + rowsToAddVisits.length + " รายการ");
     }
 
-    result.logs.push("ซิงค์และอัปเดตข้อมูลจาก Google Drive เข้าสู่ระบบเวชระเบียนเรียบร้อยแล้ว");
+    result.logs.push("ซิงค์และอัปเดตข้อมูลจาก Google Drive เข้าสู่ระบบเวชระเบียนเรียบร้อยแล้ว รวม นพอ. ทั้งสิ้น: " + (recipientSheet.getLastRow() - 1) + " ราย");
   } catch (e) {
     result.success = false;
     result.error = e.message;

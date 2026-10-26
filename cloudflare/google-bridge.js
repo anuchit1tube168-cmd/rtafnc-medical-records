@@ -6,7 +6,31 @@ function doGet() {
 function config_(key) {
   const props = PropertiesService.getScriptProperties().getProperty(key);
   if (props) return props;
-  return key === 'GAS_BRIDGE_SECRET' ? CF_CONFIG_.bridgeSecret : CF_CONFIG_.spreadsheetId;
+  const embedded = {
+    GAS_BRIDGE_SECRET: CF_CONFIG_.bridgeSecret,
+    SPREADSHEET_ID: CF_CONFIG_.spreadsheetId,
+    LINE_LIFF_ID: CF_CONFIG_.lineLiffId,
+    LINE_LOGIN_CHANNEL_ID: CF_CONFIG_.lineChannelId,
+    SYSTEM_NAME: CF_CONFIG_.systemName,
+    ORGANIZATION_NAME: CF_CONFIG_.orgName
+  };
+  return embedded[key] || '';
+}
+
+// LINE user ID -> student ID binding. Stored in a sheet so staff can manage it
+// without opening the script editor; Script Properties still works as a fallback.
+function lineBinding_(lineUserId) {
+  try {
+    const sheet = getSpreadsheet().getSheetByName('LineBindings');
+    if (sheet && sheet.getLastRow() > 1) {
+      const rows = sheet.getDataRange().getValues().slice(1);
+      const hit = rows.find(row => String(row[0]).trim() === lineUserId);
+      if (hit && hit[1]) return String(hit[1]).trim();
+    }
+  } catch (error) {
+    // Fall through to Script Properties when the sheet is missing or unreadable.
+  }
+  return PropertiesService.getScriptProperties().getProperty('LINE_STUDENT_' + lineUserId) || '';
 }
 
 function verifyEnvelope_(envelope) {
@@ -36,8 +60,7 @@ function verifyEnvelope_(envelope) {
 }
 
 function verifyStudent_(input) {
-  const props = PropertiesService.getScriptProperties();
-  const channel = props.getProperty('LINE_LOGIN_CHANNEL_ID');
+  const channel = config_('LINE_LOGIN_CHANNEL_ID');
   if (!channel || typeof input.idToken !== 'string' || input.idToken.length > 8192) throw new Error('กรุณาเข้าสู่ระบบ LINE');
   const response = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
     method: 'post', payload: { id_token: input.idToken, client_id: channel }, muteHttpExceptions: true
@@ -46,7 +69,7 @@ function verifyStudent_(input) {
   const identity = JSON.parse(response.getContentText());
   if (!identity.sub || identity.aud !== channel || identity.iss !== 'https://access.line.me' || identity.exp * 1000 <= Date.now()) throw new Error('ตัวตน LINE ไม่ถูกต้อง');
   // Binding is created by an administrator; never trust a student ID claimed by the browser.
-  const studentId = props.getProperty('LINE_STUDENT_' + identity.sub);
+  const studentId = lineBinding_(identity.sub);
   const requested = input.method === 'lookupStudentByStudentId' ? input.args[0] : input.args[0] && input.args[0].studentId;
   if (!studentId || String(requested) !== studentId) throw new Error('บัญชี LINE ยังไม่ผูกกับรหัสนักเรียนนี้ กรุณาติดต่อเจ้าหน้าที่');
   if (input.method === 'submitLiffSelfCheckin') input.args[0].lineDisplayName = identity.name || '';

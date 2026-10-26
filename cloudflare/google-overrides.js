@@ -13,6 +13,16 @@ function initializeAdminUser() {
 function ensureSampleStudentsExist() { return; }
 function isDemoEnabled() { return false; }
 
+// Reads from build-time configuration or Script Properties, never from the Settings
+// sheet: a standalone web app has no active spreadsheet for getActiveSpreadsheet().
+function getLiffConfig() {
+  return {
+    liffId: config_('LINE_LIFF_ID'),
+    systemName: config_('SYSTEM_NAME'),
+    orgName: config_('ORGANIZATION_NAME')
+  };
+}
+
 function loginUser(username, password) {
   username = String(username || '').trim().toLowerCase();
   password = String(password || '');

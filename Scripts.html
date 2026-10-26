@@ -152,21 +152,17 @@ function initApp() {
 }
 
 /**
- * ฟังก์ชันช่วยกรอกชื่อผู้ใช้และรหัสผ่านเริ่มต้นอย่างรวดเร็ว
+ * ฟังก์ชันช่วยกรอกชื่อผู้ใช้อย่างรวดเร็ว (ไม่กรอกรหัสผ่านให้)
  */
-function fillQuickCredentials(username, password) {
+function fillQuickCredentials(username) {
   const userEl = document.getElementById('username');
-  const passEl = document.getElementById('password');
-  if (userEl && passEl) {
-    userEl.value = username || 'admin';
-    passEl.value = password || '1234';
+  if (userEl) {
+    userEl.value = username || '';
     userEl.classList.add('input-highlight');
-    passEl.classList.add('input-highlight');
     setTimeout(function() {
       userEl.classList.remove('input-highlight');
-      passEl.classList.remove('input-highlight');
     }, 1200);
-    showToast('กรอกข้อมูลเข้าสู่ระบบเรียบร้อย (ชื่อผู้ใช้: ' + userEl.value + ')', 'info');
+    document.getElementById('password')?.focus();
   }
 }
 
@@ -1882,6 +1878,27 @@ function handleSaveReferral(e) {
     closeModal('referralModal');
     showToast(res.message, 'success');
     loadReferrals();
+
+    // ส่งการแจ้งเตือนไปยัง Telegram ทันทีผ่าน Cloudflare Worker Edge
+    try {
+      const recipient = appState.recipients ? appState.recipients.find(r => r.RecipientID === formData.RecipientID) : null;
+      fetch('https://rtafnc-medical.anuchit1tube168.workers.dev/api/telegram/referral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinationHospital: formData.DestinationHospital || 'รพ.ภูมิพลอดุลยเดช พอ.',
+          studentName: recipient ? ((recipient.Title || '') + (recipient.FirstName || '') + ' ' + (recipient.LastName || '')) : (formData.RecipientName || 'นพอ.'),
+          studentId: recipient ? (recipient.NumberOrOrder || recipient.RecipientID) : formData.RecipientID,
+          group: recipient ? (recipient.Group || '-') : '-',
+          diagnosis: formData.ChiefComplaint || '-',
+          allergy: recipient ? (recipient.AllergyMedication || 'ไม่มี') : 'ไม่มี',
+          bloodGroup: recipient ? (recipient.BloodGroup || '-') : '-',
+          urgencyLevel: '🚨 เร่งด่วนฉุกเฉิน (ส่งต่อ รพ.)',
+          referralReason: formData.ReasonForReferral || '-',
+          referredBy: appState.currentUser ? (appState.currentUser.FullName || appState.currentUser.Username) : 'น.พยาบาล เวร'
+        })
+      }).catch(function() {});
+    } catch(e) {}
   }, function() {
     submitBtn.disabled = false;
   });
@@ -2953,7 +2970,27 @@ function handleLiffCheckinSubmit(e) {
   const btn = document.getElementById('liffCheckinSubmitBtn');
   btn.disabled = true;
   showLoading('กำลังส่งข้อมูลแจ้งอาการป่วยเข้าห้องพยาบาล...');
-  
+
+  // ส่งการแจ้งเตือนไปยัง Telegram ทันทีผ่าน Cloudflare Worker Edge
+  try {
+    fetch('https://rtafnc-medical.anuchit1tube168.workers.dev/api/telegram/triage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentName: liffCurrentStudent ? ((liffCurrentStudent.Title || '') + (liffCurrentStudent.FirstName || '') + ' ' + (liffCurrentStudent.LastName || '')) : studentId,
+        studentId: studentId,
+        group: liffCurrentStudent ? (liffCurrentStudent.Group || '-') : '-',
+        department: liffCurrentStudent ? (liffCurrentStudent.Department || '-') : '-',
+        bloodGroup: liffCurrentStudent ? (liffCurrentStudent.BloodGroup || '-') : '-',
+        allergy: liffCurrentStudent ? (liffCurrentStudent.AllergyMedication || '-') : '-',
+        location: location,
+        chiefComplaint: chiefComplaint,
+        incidentDetails: details,
+        urgency: urgency
+      })
+    }).catch(function() {});
+  } catch(e) {}
+
   google.script.run
     .withSuccessHandler(function(res) {
       hideLoading();

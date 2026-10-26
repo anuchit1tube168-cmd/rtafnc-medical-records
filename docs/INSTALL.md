@@ -22,7 +22,7 @@ npm run build
 npm test
 ```
 
-ต้องเห็น `pass 7 / fail 0` และข้อความ `Built Cloudflare website and isolated Google bridge in dist/`
+ต้องเห็น `pass 9 / fail 0` และข้อความ `Built Cloudflare website and isolated Google bridge in dist/`
 
 ไฟล์ที่ได้
 - `dist/public/` = เว็บไซต์สำหรับ Cloudflare
@@ -74,8 +74,12 @@ node -e "const c=require('crypto');console.log(c.createHash('sha256').update('�
 ```bash
 export GAS_BRIDGE_SECRET="$(openssl rand -hex 32)"   # เก็บค่านี้ไว้ ใช้ซ้ำในขั้นที่ 5
 export SPREADSHEET_ID='<ID ของ Google Sheets ฐานข้อมูลเดิม>'
+export LINE_LIFF_ID='<LIFF ID จาก LINE Developers Console>'
+export LINE_LOGIN_CHANNEL_ID='<Channel ID ของ LINE Login channel>'
 npm run build
 ```
+
+`LINE_LIFF_ID` และ `LINE_LOGIN_CHANNEL_ID` ยังไม่รู้ตอนแรกได้ ให้เว้นไว้ก่อนแล้วกลับมา build ใหม่ในขั้นที่ 9 ค่าที่ไม่ใส่จะกลายเป็นสตริงว่าง และหน้า LINE จะแจ้ง `กรุณาเข้าสู่ระบบ LINE`
 
 `dist/google/Backend.gs` จะมีบรรทัด `const CF_CONFIG_ = {...}` ที่บรรจ��ค่าไว้ ให้ดันไฟล์นี้ขึ้นสคริปต์สะพานในขั้นที่ 3
 
@@ -83,7 +87,18 @@ npm run build
 
 ทางเลือกที่ปลอดภัยกว่า: ใส่ค่าใน Script Properties ของสคริปต์สะพานแทน โดยตั้งชื่อคีย์ `GAS_BRIDGE_SECRET` และ `SPREADSHEET_ID` ค่าใน Script Properties จะถูกใช้แทนค่าที่ฝังไว้เสมอ การสลับวิธีนี้ได้โดยไม่ต้องแก้โค้ด
 
-ค่า `CF_NOTIFICATIONS_ENABLED` มีค่าเริ่มต้นเป็น `FALSE` อยู่แล้วในโค้ด ไม่ต้องทำอะไร Telegram จะยังไม่ส่ง ถ้าต้องการเปิดใช้งานให้เพิ่ม `TELEGRAM_BOT_TOKEN` และ `TELEGRAM_CHAT_ID` ใน Script Properties แล้วเปลี่ยน `CF_NOTIFICATIONS_ENABLED` เป็น `TRUE`
+การแจ้งเตือน Telegram ของระบบนี้ส่งจาก Cloudflare Worker โดยตรง (`/api/telegram/referral` และ `/api/telegram/triage`) จึงเก็บค่าเป็น Worker secret ไม่ใช่ Script Properties
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+```
+
+ถ้าไม่ตั้ง secret ทั้งสองตัว ระบบยังบันทึกข้อมูลได้ตามปกติ แต่จะไม่มีการส่งข้อความ (ไม่ทำให้ข้อมูลสูญหาย)
+
+ทดสอบหลังตั้งค่าโดยเปิด `<Worker URL>/api/telegram/test` แล้วตรวจว่าผู้รับได้รับข้อความจริง
+
+ค่า `CF_NOTIFICATIONS_ENABLED` ที่อยู่ในโค้ดสะพานใช้กับฟังก์ชันแจ้งเตือนภายในสคริปต์เท่านั้น ไม่เกี่ยวกับสองเส้นทางข้างต้น
 
 ## ขั้นที่ 5: ใส่ Secret ฝั่ง Cloudflare และ deploy เว็บ
 
@@ -124,17 +139,61 @@ printf '%s' 'https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec' | npx wran
 
 ถ้าขึ้น `เชื่อมต่อ Google ไม่สำเร็จ` แสดงว่า Worker ยังตั้งค่าไม่ครบ ให้ตรวจ `GAS_WEB_APP_URL` และ `GAS_BRIDGE_SECRET` ว่าตรงกันทั้งสองฝั่ง
 
-## ขั้นที่ 9: เชื่อม LINE LIFF (ทำเมื่อพร้อม)
+## ขั้นที่ 9: เชื่อม LINE LIFF
 
-1. ใน LINE Developers Console เปิดสิทธิ์ `openid` และ `profile` ของ LIFF
-2. ตั้ง Endpoint URL เป็นโดเมน Cloudflare + `?page=liff`
-3. เพิ่มค่าใน Script Properties ของสคริปต์สะพาน
+ระบบนี้ใช้ LINE แบบ LIFF อย่างเดียว (เปิดเว็บในแอป LINE และยืนยันตัวตนนักศึกษา) ไม่ต้องใช้ Messaging API ถ้ายังไม่ต้องการส่งข้อความเข้า LINE
 
-| คีย์ | ค่า |
-|---|---|
-| `LINE_LIFF_ID` | LIFF ID จาก Console |
-| `LINE_LOGIN_CHANNEL_ID` | Channel ID จาก Console |
-| `LINE_STUDENT_<USER_ID>` | ผูกบัญชี LINE กับรหัสนักเรียน 7 หลัก |
+### 9.1 เตรียมใน LINE Developers Console
+
+1. เปิด https://developers.line.biz/console/ แล้วเลือก provider ของหน่วยงาน
+2. ต้องมี **LINE Login channel** หนึ่งตัว เก็บ **Channel ID** จากแท็บ Basic settings
+3. ใน channel นั้นไปแท็บ **LIFF** แล้วเลือก LIFF app ของระบบนี้ (1 ระบบ = 1 LIFF app ไม่ใช้ร่วมกับระบบอื่น)
+4. ตั้ง **Endpoint URL** เป็น
+
+```
+https://<Worker URL>/?page=liff
+```
+
+ต้องมี `?page=liff` ต่อท้าย เพราะหน้า LIFF ของระบบนี้เปิดด้วยพารามิเตอร์นี้ ไม่ใช่ `/` อย่างเดียว
+
+5. เปิด scopes `openid` และ `profile` แล้วกด Save
+6. ถ้า channel ยังเป็นสถานะ Developing ให้กด **Publish** ก่อนเปิดให้ นพอ. คนอื่นใช้จริง
+
+### 9.2 ฝังค่าแล้ว deploy สองฝั่ง
+
+```bash
+export LINE_LIFF_ID='<LIFF ID>'
+export LINE_LOGIN_CHANNEL_ID='<Channel ID>'
+npm run build                 # สร้าง dist/google/Backend.gs ที่มีค่า LINE
+```
+
+จากนั้นอัป `dist/google/Backend.gs` ขึ้นสคริปต์สะพาน (แทน `Backend.js`) แล้ว deploy version ใหม่ทับ deployment เดิม เพื่อให้ URL เดิมยังใช้ได้
+
+```bash
+clasp push -f
+clasp deploy -i <DEPLOYMENT_ID> -d "เพิ่มค่า LINE"
+```
+
+ไม่ต้องใส่ `GAS_WEB_APP_URL` ใหม่ เพราะ deployment เดิม URL ไม่เปลี่ยน
+
+### 9.3 ผูกบัญชี LINE กับรหัสนักเรียน
+
+สร้างชีตชื่อ **`LineBindings`** ใน Google Sheets ฐานข้อมูลเดิม มี 3 คอลัมน์
+
+| คอลัมน์ A | คอลัมน์ B | คอลัมน์ C |
+|---|---|---|
+| LINE user id (`U...`) | รหัสนักเรียน 7 หลัก | หมายเหตุ |
+
+ระบบอ่านสิทธิ์จากชีตนี้เท่านั้น ไม่เชื่อรหัสนักเรียนที่เบราว์เซอร์ส่งมา ผู้ใช้ที่ไม่มีแถวในชีตนี้จะเปิดดูข้อมูลไม่ได้
+
+ถ้าชีตยังไม่มี จะตกไปอ่าน `LINE_STUDENT_<USER_ID>` ใน Script Properties เป็นทางสำรอง
+
+### 9.4 ตรวจว่าสำเร็จ
+
+1. เปิด `<Worker URL>/?page=liff` บนมือถือ ต้องเห็นหน้า LINE LIFF ไม่ใช่หน้าล็อกอินเจ้าหน้าที่
+2. เรียก `getLiffConfig` ต้องได้ `liffId` เป็นค่าจริง ไม่ใช่สตริงว่าง
+3. เรียก `lookupStudentByStudentId` โดยไม่มี idToken ต้องตอบ `กรุณาเข้าสู่ระบบ LINE` แปลว่าการตรวจ idToken ทำงาน
+4. ล็อกอิน LINE แล้วค้นรหัสนักเรียนของตนเอง ต้องเห็นข้อมูลเฉพาะของตน
 
 ระบบจะไม่ยอมให้เปิดดูประวัติของนักเรียนอื่น เพราะตรวจ ID token กับ LINE แล้วเทียบกับค่าที่ผู้ดูแลผูกไว้เท่านั้น
 
@@ -144,7 +203,13 @@ printf '%s' 'https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec' | npx wran
 
 ย้อนเว็บ Cloudflare: `npx wrangler rollback` เลือกเวอร์ชันก่อนหน้า หน้าเว็บย้อนได้ทันที
 
-ย้อนสคริปต์: ใน Apps Script เลือก deployment เก่า แล้ว Deploy > Manage deployments > Edit > Version: New version
+ย้อนสคริปต์: ดูเลข version ที่ทำงานได้ก่อนหน้า (เช่น 13) แล้ว redeploy ทับ deployment เดิม
+
+```bash
+clasp deploy -i <DEPLOYMENT_ID> -V 13 -d "rollback"
+```
+
+หรือใน Apps Script ไปที่ Deploy > Manage deployments > ไอคอนแก้ไข > Version: เลือก version เก่า > Deploy
 
 ข้อควรรู้: การย้อนโค้ดไม่ได้ย้อนข้อมูลในฐานข้อมูล ถ้ามีการเขียนข้อมูลจริงแล้วต้องกู้จากไฟล์สำรองแยกต่างหาก
 

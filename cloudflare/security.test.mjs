@@ -94,3 +94,24 @@ test('generated bundle drops legacy admin password bypass and sample seeding', (
   assert.equal(code.includes('function ensureSampleStudentsExist() { return; }'), true);
   assert.equal(/REVIEW|ศุภัสสรา/.test(code), false);
 });
+
+test('Workers exposes health, LIFF config, and validates notification endpoints', async () => {
+  const env = {
+    LINE_LIFF_ID: '2010948179-Ympqt2bT',
+    TELEGRAM_BOT_TOKEN: 'test-token',
+    TELEGRAM_CHAT_ID: 'test-chat'
+  };
+  const healthRes = await handleRequest(new Request('https://health.example/api/health'), env);
+  assert.equal(healthRes.status, 200);
+  const healthData = await healthRes.json();
+  assert.equal(healthData.service, 'rtafnc-medical-worker');
+
+  const liffRes = await handleRequest(new Request('https://health.example/api/liff-config'), env);
+  assert.equal(liffRes.status, 200);
+  const liffData = await liffRes.json();
+  assert.equal(liffData.liffId, '2010948179-Ympqt2bT');
+
+  const refBadMethod = await handleRequest(new Request('https://health.example/api/telegram/referral'), env);
+  assert.equal(refBadMethod.status, 405);
+});
+

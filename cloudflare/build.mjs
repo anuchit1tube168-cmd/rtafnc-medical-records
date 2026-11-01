@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { parse } from 'acorn';
 import { methods, publicMethods, studentMethods } from './methods.mjs';
 const read = path => fs.readFile(path, 'utf8');
-const source = await read('Code.gs');
+const source = [await read('Code.gs'), await read('PhotoResolver.gs')].join('\n');
 const overrides = await read('cloudflare/google-overrides.js');
 const replacementNames = new Set(parse(overrides, { ecmaVersion: 'latest' }).body.filter(n => n.type === 'FunctionDeclaration').map(n => n.id.name));
 // Remove legacy web endpoints and replace unsafe initialization/auth in the generated target.

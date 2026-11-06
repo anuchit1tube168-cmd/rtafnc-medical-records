@@ -684,32 +684,38 @@ function getOutcomeBadge(outcome) {
 // ==========================================
 
 /**
- * ดึงและแสดงรายการผู้รับบริการ
+ * ดึงและแสดงรายการผู้รับบริการ (แสดงผลทันทีด้วย DocumentFragment/Batch HTML)
  */
 function loadRecipients() {
   const searchVal = document.getElementById('recipientSearchInput').value;
   const typeVal = document.getElementById('recipientTypeFilter').value;
+  const groupVal = document.getElementById('recipientGroupFilter') ? document.getElementById('recipientGroupFilter').value : 'All';
   const statusVal = document.getElementById('recipientStatusFilter').value;
   
   const filters = {
     search: searchVal,
     type: typeVal,
+    group: groupVal,
     status: statusVal
   };
   
   callBackend('getServiceRecipients', [appState.sessionToken, filters], function(list) {
     appState.recipientsList = list;
     const tbody = document.getElementById('recipientsTableBody');
-    tbody.innerHTML = '';
+    if (!tbody) return;
     
-    if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center">ไม่พบข้อมูลทะเบียนสุขภาพตามตัวกรอง</td></tr>`;
+    if (!list || list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center p-4">
+        <i class="fas fa-search text-muted fa-2x mb-2 d-block"></i>
+        ไม่พบข้อมูลนักเรียนพยาบาล (นพอ.) หรือผู้รับบริการตามคำค้นนี้<br>
+        <button class="btn btn-outline btn-sm mt-2" onclick="clearRecipientFilters()"><i class="fas fa-redo"></i> ล้างตัวกรองทั้งหมด</button>
+      </td></tr>`;
       return;
     }
     
-    const role = appState.currentUser.role;
+    const role = appState.currentUser ? appState.currentUser.role : 'VIEWER';
     
-    list.forEach(r => {
+    const htmlRows = list.map(r => {
       const isDemoBadge = r.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
       const statusBadge = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
       
@@ -726,24 +732,30 @@ function loadRecipients() {
       
       const studentIdBadge = r.NumberOrOrder ? `<span class="badge-student-id"><i class="fas fa-id-badge"></i> ${r.NumberOrOrder}</span><br>` : '';
       const photoBadge = r.PhotoFileId ? '<span class="badge-photo" title="มีรูปประจำตัวในทะเบียนกลาง"><i class="fas fa-camera"></i></span> ' : '';
-      tbody.innerHTML += `
+      return `
         <tr>
           <td>${isDemoBadge}${studentIdBadge}<small class="text-muted">${r.RecipientID}</small></td>
-          <td>${photoBadge}<strong>${r.Title}${r.FirstName} ${r.LastName}</strong></td>
+          <td>${photoBadge}<strong>${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''}</strong></td>
           <td>${r.Nickname || '-'}</td>
-          <td>${r.RecipientType}</td>
+          <td>${r.RecipientType || 'นักเรียนพยาบาลทหารอากาศ'}</td>
           <td>${r.Group || '-'} / ${r.Level || '-'}</td>
           <td>${r.CongenitalDiseases !== '-' && r.CongenitalDiseases ? `<span class="badge badge-danger">${r.CongenitalDiseases}</span>` : '-'}</td>
           <td>${statusBadge}</td>
           <td>${actionsHtml}</td>
         </tr>
       `;
-    });
+    }).join('');
+
+    tbody.innerHTML = htmlRows;
   });
 }
 
+let recipientSearchTimeout_ = null;
 function filterRecipients() {
-  loadRecipients();
+  clearTimeout(recipientSearchTimeout_);
+  recipientSearchTimeout_ = setTimeout(() => {
+    loadRecipients();
+  }, 200);
 }
 
 /**
@@ -752,6 +764,7 @@ function filterRecipients() {
 function clearRecipientFilters() {
   document.getElementById('recipientSearchInput').value = '';
   document.getElementById('recipientTypeFilter').value = 'All';
+  if (document.getElementById('recipientGroupFilter')) document.getElementById('recipientGroupFilter').value = 'All';
   document.getElementById('recipientStatusFilter').value = 'All';
   loadRecipients();
 }

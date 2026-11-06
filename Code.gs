@@ -2173,22 +2173,80 @@ function getServiceRecipients(sessionToken, filters) {
     // คัดกรองตัวกรอง (ถ้ามี)
     if (filters) {
       if (filters.search) {
-        const q = String(filters.search).toLowerCase();
-        const fullName = (String(row[firstNameIdx]) + " " + String(row[lastNameIdx])).toLowerCase();
-        const nickname = String(row[headers.indexOf("Nickname")]).toLowerCase();
-        const natId = String(row[headers.indexOf("NationalID")]).toLowerCase();
-        const rId = String(row[recIdIdx]).toLowerCase();
+        const q = String(filters.search).toLowerCase().trim();
+        const title = String(row[headers.indexOf("Title")] || "").toLowerCase();
+        const first = String(row[firstNameIdx] || "").toLowerCase();
+        const last = String(row[lastNameIdx] || "").toLowerCase();
+        const fullName = (title + first + " " + last + " " + first + " " + last).toLowerCase();
+        const nickname = String(row[headers.indexOf("Nickname")] || "").toLowerCase();
+        const natId = String(row[headers.indexOf("NationalID")] || "").toLowerCase();
+        const rId = String(row[recIdIdx] || "").toLowerCase();
         const numOrder = String(row[headers.indexOf("NumberOrOrder")] || "").toLowerCase();
+        const rType = String(row[recipientTypeIdx] || "").toLowerCase();
+        const group = String(row[groupIdx] || "").toLowerCase();
+        const dept = String(row[departmentIdx] || "").toLowerCase();
         
-        if (fullName.indexOf(q) === -1 && nickname.indexOf(q) === -1 && natId.indexOf(q) === -1 && rId.indexOf(q) === -1 && numOrder.indexOf(q) === -1) {
+        // หากผู้ใช้พิมพ์คำว่า "นพอ", "นพอ.", "นักเรียน", "นร" ให้แสดงนักเรียนพยาบาลทั้งหมด
+        const isStudentKeyword = q === "นพอ" || q === "นพอ." || q === "นักเรียน" || q === "นร" || q === "นักเรียนพยาบาล";
+        const isStudent = rType.includes("นักเรียน") || title.includes("นพอ") || group.includes("นพอ");
+        
+        // ค้นหาตามชั้นปี เช่น "ปี 1", "ปี 2", "ปี 3", "ปี 4", "ชั้นปี 1"
+        const yearMatch = q.match(/(?:ชั้น)?ปี\s*([1-4])/);
+        let matchesYear = false;
+        if (yearMatch) {
+          const yr = yearMatch[1];
+          matchesYear = group.includes("ปีที่ " + yr) || group.includes("ปี " + yr) ||
+            (yr === "1" && numOrder.startsWith("69")) ||
+            (yr === "2" && numOrder.startsWith("68")) ||
+            (yr === "3" && numOrder.startsWith("67")) ||
+            (yr === "4" && numOrder.startsWith("66"));
+        }
+
+        // ค้นหาตามรุ่น เช่น "รุ่น 69", "รุ่น 68", "รุ่น69"
+        const cohortMatch = q.match(/รุ่น\s*(\d{2})/);
+        let matchesCohort = false;
+        if (cohortMatch) {
+          matchesCohort = numOrder.startsWith(cohortMatch[1]) || group.includes(cohortMatch[1]);
+        }
+
+        if ((isStudentKeyword && isStudent) || matchesYear || matchesCohort) {
+          // ผ่านตัวกรองทันที
+        } else if (
+          fullName.indexOf(q) === -1 &&
+          nickname.indexOf(q) === -1 &&
+          natId.indexOf(q) === -1 &&
+          rId.indexOf(q) === -1 &&
+          numOrder.indexOf(q) === -1 &&
+          title.indexOf(q) === -1 &&
+          rType.indexOf(q) === -1 &&
+          group.indexOf(q) === -1 &&
+          dept.indexOf(q) === -1
+        ) {
           continue;
         }
       }
-      if (filters.type && filters.type !== "All" && row[recipientTypeIdx] !== filters.type) {
-        continue;
+      if (filters.type && filters.type !== "All") {
+        const rowType = String(row[recipientTypeIdx] || "");
+        if (filters.type === "นักเรียน/นักศึกษา" || filters.type === "นักเรียนพยาบาลทหารอากาศ" || filters.type === "นพอ.") {
+          if (!rowType.includes("นักเรียน") && !String(row[headers.indexOf("Title")] || "").includes("นพอ")) continue;
+        } else if (rowType !== filters.type) {
+          continue;
+        }
       }
-      if (filters.group && filters.group !== "All" && row[groupIdx] !== filters.group) {
-        continue;
+      if (filters.group && filters.group !== "All") {
+        const rowGroup = String(row[groupIdx] || "");
+        const rowCode = String(row[headers.indexOf("NumberOrOrder")] || "").replace(/\D/g, "");
+        if (filters.group === "1" || filters.group === "นพอ.ชั้นปีที่ 1") {
+          if (!rowGroup.includes("ปีที่ 1") && !rowCode.startsWith("69")) continue;
+        } else if (filters.group === "2" || filters.group === "นพอ.ชั้นปีที่ 2") {
+          if (!rowGroup.includes("ปีที่ 2") && !rowCode.startsWith("68")) continue;
+        } else if (filters.group === "3" || filters.group === "นพอ.ชั้นปีที่ 3") {
+          if (!rowGroup.includes("ปีที่ 3") && !rowCode.startsWith("67")) continue;
+        } else if (filters.group === "4" || filters.group === "นพอ.ชั้นปีที่ 4") {
+          if (!rowGroup.includes("ปีที่ 4") && !rowCode.startsWith("66")) continue;
+        } else if (rowGroup.indexOf(filters.group) === -1) {
+          continue;
+        }
       }
       if (filters.status && filters.status !== "All" && row[statusIdx] !== filters.status) {
         continue;

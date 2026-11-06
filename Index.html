@@ -617,12 +617,18 @@
                   <input type="text" id="recipientSearchInput" class="form-control" placeholder="ค้นหาด้วย รหัส นพอ. 7 หลัก, เลขบัตรประชาชน, ชื่อ, นามสกุล..." oninput="filterRecipients()">
                 </div>
                 <select id="recipientTypeFilter" class="filter-select" onchange="filterRecipients()">
-                  <option value="All">-- แสดงทุกประเภทคนไข้ --</option>
-                  <option value="นักเรียน/นักศึกษา">นักเรียน/นักศึกษา</option>
+                  <option value="All">-- แสดงทุกประเภท --</option>
+                  <option value="นักเรียนพยาบาลทหารอากาศ">นักเรียนพยาบาลทหารอากาศ (นพอ.)</option>
+                  <option value="นายทหาร/ข้าราชการ">นายทหาร/ข้าราชการ</option>
                   <option value="พนักงาน/บุคลากร">พนักงาน/บุคลากร</option>
-                  <option value="ผู้สูงอายุ">ผู้สูงอายุ</option>
-                  <option value="เด็กเล็ก/อนุบาล">เด็กเล็ก/อนุบาล</option>
                   <option value="บุคคลภายนอก">บุคคลภายนอก</option>
+                </select>
+                <select id="recipientGroupFilter" class="filter-select" onchange="filterRecipients()">
+                  <option value="All">-- ทุกชั้นปี / ทุกกลุ่ม --</option>
+                  <option value="1">นพอ. ชั้นปีที่ 1 (รุ่น 69)</option>
+                  <option value="2">นพอ. ชั้นปีที่ 2 (รุ่น 68)</option>
+                  <option value="3">นพอ. ชั้นปีที่ 3 (รุ่น 67)</option>
+                  <option value="4">นพอ. ชั้นปีที่ 4 (รุ่น 66)</option>
                 </select>
                 <select id="recipientStatusFilter" class="filter-select" onchange="filterRecipients()">
                   <option value="All">-- ทุกสถานะ --</option>

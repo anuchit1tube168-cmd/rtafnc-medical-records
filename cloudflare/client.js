@@ -8,8 +8,13 @@
         try {
           let idToken;
           if (['lookupStudentByStudentId', 'submitLiffSelfCheckin'].includes(method)) {
-            if (!window.liff || !liff.isLoggedIn()) throw new Error('กรุณาเข้าสู่ระบบ LINE ก่อนใช้งาน');
-            idToken = liff.getIDToken();
+            if (window.liff && typeof liff.isLoggedIn === 'function' && liff.isLoggedIn()) {
+              idToken = liff.getIDToken();
+            } else if (window.appState && window.appState.sessionToken) {
+              // อนุญาตให้เจ้าหน้าที่ดูข้อมูลในโหมดพรีวิวได้
+            } else {
+              throw new Error('กรุณาเข้าสู่ระบบ LINE ก่อนใช้งาน');
+            }
           }
           const response = await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ method, args, idToken }), cache: 'no-store' });

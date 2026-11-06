@@ -888,70 +888,91 @@ function handleSaveRecipient(e) {
 }
 
 /**
- * ดูแฟ้มประวัติ (Profile Viewer)
+ * ดูแฟ้มประวัติ (Profile Viewer) — แสดงข้อมูลทันที (Instant 0ms UI) แล้วโหลดประวัติแบบละเอียดในพื้นหลัง
  */
-function viewRecipientProfile(id) {
-  showLoading('กำลังเปิดแฟ้มประวัติสุขภาพ...');
-  callBackend('getServiceRecipientById', [appState.sessionToken, id], function(r) {
-    hideLoading();
-    appState.selectedRecipient = r;
-    
-    // ตั้งค่าแสดงผลข้อมูลส่วนตัว
-    document.getElementById('profRecId').textContent = r.RecipientID;
-    document.getElementById('profFullName').textContent = `${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''} (${r.Nickname || '-'})`;
-    document.getElementById('profType').textContent = r.RecipientType || '-';
-    document.getElementById('profGroup').textContent = `${r.Group || '-'} / ${r.Level || '-'}`;
-    document.getElementById('profSubUnit').textContent = r.SubUnit || '-';
-    document.getElementById('profBlood').textContent = r.BloodType || '-';
-    document.getElementById('profAge').textContent = `${r.Age || '-'} ปี (${formatDateThai(r.BirthDate)})`;
-    document.getElementById('profStatus').innerHTML = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
-    
-    // ตั้งค่ากล่องเตือนโรคประจำตัวและแพ้ยาพิเศษ
-    const alertBox = document.getElementById('profileAlertsBox');
+function renderBasicProfileData(r) {
+  document.getElementById('profRecId').textContent = r.RecipientID || '-';
+  document.getElementById('profFullName').textContent = `${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''} (${r.Nickname || '-'})`;
+  document.getElementById('profType').textContent = r.RecipientType || '-';
+  document.getElementById('profGroup').textContent = `${r.Group || '-'} / ${r.Level || '-'}`;
+  document.getElementById('profSubUnit').textContent = r.SubUnit || '-';
+  document.getElementById('profBlood').textContent = r.BloodType || r.BloodGroup || '-';
+  document.getElementById('profAge').textContent = `${r.Age || '-'} ปี ${r.BirthDate ? '(' + formatDateThai(r.BirthDate) + ')' : ''}`;
+  document.getElementById('profStatus').innerHTML = r.Status === 'Active' || !r.Status ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
+  
+  // ตั้งค่ากล่องเตือนโรคประจำตัวและแพ้ยาพิเศษ
+  const alertBox = document.getElementById('profileAlertsBox');
+  if (alertBox) {
     alertBox.innerHTML = '';
-    
-    if (r.DrugAllergies && r.DrugAllergies !== '-') {
+    const drugAllergy = r.DrugAllergies || r.AllergyMedication;
+    if (drugAllergy && drugAllergy !== '-') {
       alertBox.innerHTML += `
         <div class="alert-box alert-danger">
           <i class="fas fa-exclamation-triangle"></i>
-          <div><strong>ประวัติแพ้ยาเฉียบพลัน:</strong> ${profEsc_(r.DrugAllergies)}</div>
+          <div><strong>ประวัติแพ้ยาเฉียบพลัน:</strong> ${profEsc_(drugAllergy)}</div>
         </div>
       `;
     }
-    
-    if (r.CongenitalDiseases && r.CongenitalDiseases !== '-') {
+    const cong = r.CongenitalDiseases;
+    if (cong && cong !== '-') {
       alertBox.innerHTML += `
         <div class="alert-box alert-warning">
           <i class="fas fa-exclamation-triangle"></i>
-          <div><strong>โรคประจำตัว:</strong> ${profEsc_(r.CongenitalDiseases)}</div>
+          <div><strong>โรคประจำตัว:</strong> ${profEsc_(cong)}</div>
         </div>
       `;
     }
-    
-    // รายละเอียดเวชระเบียนประวัติการรักษา
-    document.getElementById('profCongenital').textContent = r.CongenitalDiseases || '-';
-    document.getElementById('profDrugAllergy').textContent = r.DrugAllergies || '-';
-    document.getElementById('profFoodAllergy').textContent = r.FoodAllergies || '-';
-    document.getElementById('profOtherAllergy').textContent = r.OtherAllergies || '-';
-    document.getElementById('profRegularMed').textContent = r.RegularMedicines || '-';
-    document.getElementById('profConstraint').textContent = r.HealthConstraints || '-';
-    document.getElementById('profContact').textContent = `${r.ContactName || '-'} (${r.ContactRelationship || '-'}) โทร: ${r.ContactPhone || '-'}`;
-    document.getElementById('profEmergency').textContent = `${r.EmergencyContact || '-'} โทร: ${r.EmergencyPhone || '-'}`;
-    document.getElementById('profNote').textContent = r.Note || '-';
-    
-    renderProfileSummary(r);
-    renderProfileVisits(r.visits || []);
-    renderProfileFollowUps(r.followUps || []);
-    renderProfileVaccinations(r.vaccinations || []);
-    renderProfileCertificates(r.certificates || []);
-    renderProfileDocuments(r);
+  }
+  
+  const setT = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '-'; };
+  setT('profCongenital', r.CongenitalDiseases);
+  setT('profDrugAllergy', r.DrugAllergies || r.AllergyMedication);
+  setT('profFoodAllergy', r.FoodAllergies);
+  setT('profOtherAllergy', r.OtherAllergies);
+  setT('profRegularMed', r.RegularMedicines);
+  setT('profConstraint', r.HealthConstraints);
+  setT('profContact', `${r.ContactName || '-'} (${r.ContactRelationship || '-'}) โทร: ${r.ContactPhone || '-'}`);
+  setT('profEmergency', `${r.EmergencyContact || '-'} โทร: ${r.EmergencyPhone || '-'}`);
+  setT('profNote', r.Note);
+}
 
+function viewRecipientProfile(id) {
+  // 1. ค้นหาข้อมูลเบื้องต้นจากหน่วยความจำก่อน เพื่อแสดงหน้าต่างทันทีโดยไม่ต้องรอโหลด
+  let r = null;
+  if (appState.serviceRecipients && appState.serviceRecipients.length > 0) {
+    r = appState.serviceRecipients.find(x => x.RecipientID === id || x.NumberOrOrder === id);
+  }
+
+  if (r) {
+    appState.selectedRecipient = r;
+    renderBasicProfileData(r);
+    renderProfileSummary(r);
     showProfileTab('overview');
     openModal('profileModal');
     loadRecipientPhoto(r);
+  } else {
+    showLoading('กำลังเปิดแฟ้มประวัติสุขภาพ...');
+  }
+
+  // 2. เรียกข้อมูลเวชระเบียนฉบับเต็ม (Visits, Vaccines, Certs, Documents) ในพื้นหลัง
+  callBackend('getServiceRecipientById', [appState.sessionToken, id], function(full) {
+    hideLoading();
+    appState.selectedRecipient = full;
+    renderBasicProfileData(full);
+    renderProfileSummary(full);
+    renderProfileVisits(full.visits || []);
+    renderProfileFollowUps(full.followUps || []);
+    renderProfileVaccinations(full.vaccinations || []);
+    renderProfileCertificates(full.certificates || []);
+    renderProfileDocuments(full);
+    if (!r) {
+      showProfileTab('overview');
+      openModal('profileModal');
+    }
+    loadRecipientPhoto(full);
   }, function(err) {
     hideLoading();
-    showToast('โหลดแฟ้มประวัติไม่สำเร็จ: ' + (err && err.message ? err.message : 'ข้อผิดพลาดระบบ'), 'error');
+    if (!r) showToast('โหลดแฟ้มประวัติไม่สำเร็จ: ' + (err && err.message ? err.message : 'ข้อผิดพลาดระบบ'), 'error');
   });
 }
 
@@ -1296,7 +1317,18 @@ function loadRecipientPhoto(r) {
       statusEl.className = 'profile-photo-status ok';
     };
     testImg.onerror = function() {
-      runFallbackDataUrl();
+      const cfImg = new Image();
+      cfImg.onload = function() {
+        img.src = cfImg.src;
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+        statusEl.textContent = 'รูปจากทะเบียนกลาง (Cloudflare Edge Cache)';
+        statusEl.className = 'profile-photo-status ok';
+      };
+      cfImg.onerror = function() {
+        runFallbackDataUrl();
+      };
+      cfImg.src = '/api/photo/' + fid;
     };
     testImg.src = 'https://drive.google.com/thumbnail?id=' + fid + '&sz=w400';
   } else {

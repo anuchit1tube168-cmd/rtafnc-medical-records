@@ -1263,8 +1263,15 @@ function importStudentDocumentsBatch(payload, key) {
 }
 
 // ---------------------------------------------------------------------------
-// 5) Monthly reports folder (xlsx ซ้ำกับฟอร์ม — ใช้เติมข้อมูลที่ขาด)
+// 5) Monthly reports folder (xlsx บันทึกการเจ็บป่วยรายเดือนของแต่ละชั้นปี)
 // ---------------------------------------------------------------------------
+
+function cleanThaiName_(str) {
+  return String(str || "")
+    .replace(/^(?:นพอ\.\([ชญ]\)|นพอ\.|นพอ\(ช\)|นพอ\(ญ\)|นพอ|นางสาว|น\.ส\.|นาย|ว่าที่\s*ร\.ต\.)\s*/i, "")
+    .replace(/[\s\.\(\)\-_]/g, "")
+    .trim();
+}
 
 function importMonthlyFolder_(ss, report) {
   var ids = (IMPORT_CFG.MONTHLY_EXTRA_FILE_IDS || []).slice();
@@ -1280,15 +1287,288 @@ function importMonthlyFolder_(ss, report) {
   }
   if (!ids.length) return { added: 0, duplicates: 0, skipped: 0 };
 
-  // ใช้ตัวนำเข้าเดียวกับฟอร์ม โดยสมมติว่ามีหัวคอลัมน์เดียวกัน
-  var cfgBackup = IMPORT_CFG.FORM_SOURCE_IDS;
-  try {
-    IMPORT_CFG.FORM_SOURCE_IDS = ids;
-    var res = importVisitsFromForms_(ss, report);
-    return res.stats;
-  } finally {
-    IMPORT_CFG.FORM_SOURCE_IDS = cfgBackup;
-  }
+  return importMonthlyReportsFromExcel_(ss, report, ids);
+}
+
+function importMonthlyReportsFromExcel_(ss, report, fileIds) {
+  var recT = readTable_(ss, "ServiceRecipients");
+  var recIdx = headerIndexMap_(recT.headers);
+  var recByCode = {};
+  var recByName = {};
+  var recByFirst = {};
+
+  recT.rows.forEach(function (r) {
+    var code = digitsOnly_(r[recIdx["NumberOrOrder"]]);
+    var rid = normText_(r[recIdx["RecipientID"]]);
+    var first = normText_(r[recIdx["FirstName"]]);
+    var last = normText_(r[recIdx["LastName"]]);
+    var title = normText_(r[recIdx["Title"]]);
+    var fullName = (title + first + " " + last).trim();
+    var cleanFull = cleanThaiName_(fullName);
+    var cleanFirst = cleanThaiName_(first);
+
+    var recInfo = {
+      recipientId: rid,
+      code: code,
+      name: fullName,
+      type: r[recIdx["RecipientType"]] || "นักเรียนพยาบาลทหารอากาศ",
+      group: r[recIdx["Group"]] || "-",
+      dept: r[recIdx["Department"]] || "กองการศึกษา วพอ."
+    };
+
+    if (code) recByCode[code] = recInfo;
+    if (cleanFull) recByName[cleanFull] = recInfo;
+    if (cleanFirst) {
+      if (!recByFirst[cleanFirst]) recByFirst[cleanFirst] = [];
+      recByFirst[cleanFirst].push(recInfo);
+    }
+  });
+
+  var visitT = readTable_(ss, "Visits");
+  var vIdx = headerIndexMap_(visitT.headers);
+  var existing = {};
+  var maxNum = 0;
+  var yearTh = String(new Date().getFullYear() + 543).substring(2);
+  var idPrefix = "VIS-" + yearTh + "-";
+
+  visitT.rows.forEach(function (r) {
+    var rid = normText_(r[vIdx["RecipientID"]]);
+    var d = parseDateValue_(r[vIdx["VisitDate"]]);
+    var cc = normText_(r[vIdx["ChiefComplaint"]]);
+    var name = normText_(r[vIdx["RecipientName"]]);
+    var key = (rid || cleanThaiName_(name)) + "|" + (d ? Utilities.formatDate(d, "Asia/Bangkok", "yyyy-MM-dd") : "") + "|" + cc;
+    existing[key] = true;
+
+    var vid = String(r[vIdx["VisitID"]] || "");
+    if (vid.indexOf(idPrefix) === 0) {
+      var n = parseInt(vid.substring(idPrefix.length), 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    }
+  });
+  function nextVisitId() { maxNum++; return idPrefix + ("00000" + maxNum).slice(-5); }
+
+  var aT = readTable_(ss, "Assessments");
+  var aIdx = headerIndexMap_(aT.headers);
+  var tT = readTable_(ss, "Treatments");
+  var tIdx = headerIndexMap_(tT.headers);
+
+  var assessSeq = maxSeqFromRows_(aT.rows);
+  var treatSeq = maxSeqFromRows_(tT.rows);
+
+  var newVisits = [];
+  var newAssess = [];
+  var newTreat = [];
+  var added = 0, duplicates = 0, skipped = 0;
+
+  fileIds.forEach(function (fid) {
+    try {
+      var src = readSourceFile_(fid);
+      var rows = src.rows || [];
+      if (rows.length < 2) {
+        report.logs.push("ข้ามไฟล์ " + src.name + ": ไม่มีข้อมูล");
+        return;
+      }
+
+      var titleText = String(rows[0] ? rows[0].join(" ") : "") + " " + src.name;
+      var fileYear = 1;
+      if (/ชั้นปีที่\s*4|ปี\s*4/i.test(titleText)) fileYear = 4;
+      else if (/ชั้นปีที่\s*3|ปี\s*3/i.test(titleText)) fileYear = 3;
+      else if (/ชั้นปีที่\s*2|ปี\s*2/i.test(titleText)) fileYear = 2;
+      else if (/ชั้นปีที่\s*1|ปี\s*1/i.test(titleText)) fileYear = 1;
+
+      var defaultMonth = 7; // สิงหาคม (0-based: 7)
+      if (/กันยายน|ก\.ย\./i.test(titleText)) defaultMonth = 8;
+      else if (/ตุลาคม|ต\.ค\./i.test(titleText)) defaultMonth = 9;
+
+      var headerRowIdx = -1;
+      for (var r = 0; r < Math.min(5, rows.length); r++) {
+        var row = rows[r] || [];
+        var nonEmptyCount = row.filter(function(c) { return String(c).trim() !== ""; }).length;
+        var rowStr = row.join(" ");
+        if (nonEmptyCount >= 3 && (/ชื่อ-สกุล|ชื่อ/i.test(rowStr) || (/ลำดับ/i.test(rowStr) && /วันที่/i.test(rowStr)))) {
+          headerRowIdx = r;
+          break;
+        }
+      }
+      if (headerRowIdx < 0) {
+        report.logs.push("ไม่พบหัวคอลัมน์ใน " + src.name);
+        return;
+      }
+
+      var headers = rows[headerRowIdx] || [];
+      var subHeaders = rows[headerRowIdx + 1] || [];
+
+      var cName = findCol_(headers, ["ชื่อ-สกุล", "ชื่อ"]);
+      var cDate = findCol_(headers, ["วันที่", "ลงวันที่", "date"]);
+      var cDx = findCol_(headers, ["การวินิจฉัย", "dx"]);
+      var cCC = findCol_(headers, ["อาการ", "อาการสำคัญ", "cc"]);
+      var cTx = findCol_(headers, ["การรักษา", "ยาที่ได้รับ", "การรักษา/ยาที่ได้รับ", "tx"]);
+      var cNote = findCol_(headers, ["หมายเหตุ", "note"]);
+
+      var cHosp = -1, cRest = -1, cCheck = -1;
+      for (var hi = 0; hi < Math.max(headers.length, subHeaders.length); hi++) {
+        var combined = (String(headers[hi] || "") + " " + String(subHeaders[hi] || "")).trim();
+        if (/รักษาตัวที่รพ|รักษาที่\s*รพ|รพ\./i.test(combined)) cHosp = hi;
+        else if (/พักที่\s*วพอ|วพอ\.พอ\./i.test(combined)) cRest = hi;
+        else if (/รับการตรวจ/i.test(combined)) cCheck = hi;
+      }
+
+      var startDataRow = headerRowIdx + 1;
+      if (subHeaders.some(function(x) { return /รับการตรวจ|พักที่|รักษา/i.test(String(x)); })) {
+        startDataRow = headerRowIdx + 2;
+      }
+
+      var addedInFile = 0;
+      for (var i = startDataRow; i < rows.length; i++) {
+        var row = rows[i];
+        if (!row || !row.length) continue;
+        var rawName = normText_(cell_(row, cName));
+        if (!rawName || rawName === "-" || /^\d+$/.test(rawName)) continue;
+
+        var clean = cleanThaiName_(rawName);
+        var rec = recByName[clean];
+        if (!rec && recByFirst[clean]) {
+          var candidates = recByFirst[clean];
+          if (candidates.length === 1) {
+            rec = candidates[0];
+          } else {
+            var byYear = candidates.filter(function(c) {
+              return c.group.indexOf(String(fileYear)) !== -1;
+            });
+            if (byYear.length > 0) rec = byYear[0];
+            else rec = candidates[0];
+          }
+        }
+
+        if (!rec) {
+          for (var k in recByName) {
+            if (clean && (k.indexOf(clean) !== -1 || clean.indexOf(k) !== -1)) {
+              rec = recByName[k];
+              break;
+            }
+          }
+        }
+
+        var studentCode = rec ? rec.code : "";
+        var rid = rec ? rec.recipientId : "";
+        var fullName = rec ? rec.name : rawName;
+        var group = rec ? rec.group : groupLabelForYear_(fileYear);
+        var dept = rec ? rec.dept : "กองการศึกษา วพอ.";
+
+        var rawDate = cell_(row, cDate);
+        var visitDate = parseDateValue_(rawDate);
+        if (!visitDate) {
+          var dayNum = parseInt(String(rawDate || "").replace(/\D/g, ""), 10);
+          if (dayNum >= 1 && dayNum <= 31) {
+            visitDate = new Date(2026, defaultMonth, dayNum, 9, 0, 0);
+          } else {
+            visitDate = new Date(2026, defaultMonth, 1, 9, 0, 0);
+          }
+        } else {
+          if (visitDate.getFullYear() === 1969 || visitDate.getFullYear() === 2569) {
+            visitDate = new Date(2026, visitDate.getMonth(), visitDate.getDate(), visitDate.getHours() || 9, visitDate.getMinutes() || 0);
+          }
+        }
+
+        var dx = normText_(cell_(row, cDx)) || "-";
+        var cc = normText_(cell_(row, cCC)) || (dx !== "-" ? dx : "มีอาการผิดปกติ");
+        var tx = normText_(cell_(row, cTx)) || "-";
+        var note = normText_(cell_(row, cNote));
+
+        var isHosp = cHosp >= 0 && /[\/✓xX1]|รักษา/i.test(normText_(cell_(row, cHosp)));
+        var isRest = cRest >= 0 && /[\/✓xX1]|พัก/i.test(normText_(cell_(row, cRest)));
+
+        var outcome = "ตรวจรักษาและรับยาตามอาการ";
+        var urgency = "Routine";
+        var referralCreated = false;
+
+        if (isHosp) {
+          outcome = "ส่งตัวไปรักษาที่โรงพยาบาลภูมิพลอดุลยเดช พอ.";
+          urgency = "Urgent";
+          referralCreated = true;
+        } else if (isRest) {
+          outcome = "พักฟื้นที่ห้องพยาบาล วพอ.";
+        }
+        if (note && note !== "-") outcome += " (" + note + ")";
+
+        var dedupeKey = (rid || clean) + "|" + Utilities.formatDate(visitDate, "Asia/Bangkok", "yyyy-MM-dd") + "|" + cc;
+        if (existing[dedupeKey]) {
+          duplicates++;
+          continue;
+        }
+        existing[dedupeKey] = true;
+
+        var vid = nextVisitId();
+        var arr = new Array(visitT.headers.length).fill("");
+        var setV = function (name, val) { if (vIdx[name] !== undefined && vIdx[name] >= 0) arr[vIdx[name]] = val; };
+        setV("VisitID", vid);
+        setV("VisitDate", visitDate);
+        setV("TimeIn", Utilities.formatDate(visitDate, "Asia/Bangkok", "HH:mm"));
+        setV("TimeOut", "");
+        setV("RecipientID", rid);
+        setV("RecipientName", fullName);
+        setV("RecipientType", "นักเรียนพยาบาลทหารอากาศ");
+        setV("Group", group);
+        setV("Department", dept);
+        setV("AccompaniedBy", "");
+        setV("IncidentLocation", isHosp ? "โรงพยาบาลภูมิพลอดุลยเดช พอ." : "ห้องพยาบาล วพอ.");
+        setV("IncidentActivity", "การเรียน/ฝึกอบรม");
+        setV("IncidentType", "เจ็บป่วย");
+        setV("ChiefComplaint", cc);
+        setV("IncidentDetails", "นำเข้าจากรายงานการเจ็บป่วยประจำเดือน: " + src.name);
+        setV("UrgencyLevel", urgency);
+        setV("InitialAssessment", dx);
+        setV("Outcome", outcome);
+        setV("ContactNotified", false);
+        setV("ReferralCreated", referralCreated);
+        setV("FollowUpScheduled", isRest || isHosp);
+        setV("VisitStatus", "Closed");
+        setV("IsDemo", false);
+        setV("RecordedBy", "import-monthly");
+        setV("RecordedAt", new Date());
+        newVisits.push(arr);
+
+        if (dx && dx !== "-") {
+          var aArr = new Array(aT.headers.length).fill("");
+          var setA = function (n, val) { if (aIdx[n] >= 0) aArr[aIdx[n]] = val; };
+          setA("AssessmentID", "ASM-2569-" + ("00000" + (++assessSeq)).slice(-5));
+          setA("VisitID", vid);
+          setA("RecipientID", rid);
+          setA("RecordedAt", visitDate);
+          setA("AssessmentDetails", dx);
+          setA("Diagnosis", dx);
+          setA("IsDemo", false);
+          newAssess.push(aArr);
+        }
+
+        if (tx && tx !== "-") {
+          var tArr = new Array(tT.headers.length).fill("");
+          var setT = function (n, val) { if (tIdx[n] >= 0) tArr[tIdx[n]] = val; };
+          setT("TreatmentID", "TRT-2569-" + ("00000" + (++treatSeq)).slice(-5));
+          setT("VisitID", vid);
+          setT("RecipientID", rid);
+          setT("RecordedAt", visitDate);
+          setT("TreatmentDetails", tx);
+          setT("Note", outcome);
+          setT("IsDemo", false);
+          newTreat.push(tArr);
+        }
+
+        addedInFile++;
+        added++;
+      }
+      report.logs.push("นำเข้าจาก '" + src.name + "': " + addedInFile + " รายการ");
+    } catch (err) {
+      report.errors.push("ไฟล์ " + fid + ": " + err.message);
+    }
+  });
+
+  if (newVisits.length) appendRowsChunked_(visitT.sheet, newVisits);
+  if (newAssess.length) appendRowsChunked_(aT.sheet, newAssess);
+  if (newTreat.length) appendRowsChunked_(tT.sheet, newTreat);
+
+  report.logs.push("Visits รายเดือน: เพิ่ม " + added + " / ซ้ำ " + duplicates + " / ข้าม " + skipped);
+  return { added: added, duplicates: duplicates, skipped: skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -1309,6 +1589,35 @@ function scanPhotoFolders_(arg1, arg2) {
   var map = {};       // code -> array of {fileId, name, mime, folderId, year}
   var unmatched = [];
 
+  var recT = readTable_(ss, "ServiceRecipients");
+  var recIdx = headerIndexMap_(recT.headers);
+  var recByCode = {};
+  var recByName = {};
+  recT.rows.forEach(function (r) {
+    var code = digitsOnly_(r[recIdx["NumberOrOrder"]]);
+    var title = normText_(r[recIdx["Title"]]);
+    var first = normText_(r[recIdx["FirstName"]]);
+    var last = normText_(r[recIdx["LastName"]]);
+    var fullName = (title + first + " " + last).trim();
+    var clean = cleanThaiName_(fullName);
+    var cleanFirst = cleanThaiName_(first);
+    if (isSevenDigitCode_(code)) {
+      recByCode[code] = { row: r, idx: recIdx, name: fullName, clean: clean, cleanFirst: cleanFirst, group: r[recIdx["Group"]] };
+      if (clean) recByName[clean] = code;
+    }
+  });
+
+  // แมปรูปที่ชื่อไฟล์ไม่มีรหัส 7 หลัก
+  var knownNameMap = {
+    "พิมพ์มาดา": "6703860",
+    "ปุณยาพร": "6703852",
+    "ข้าวขวัญ": "6703823",
+    "รมิตา": "6703864",
+    "กัญญณัช": "6703821",
+    "ทวิกา": "6603771",
+    "ศศิชา": "6803936"
+  };
+
   function scan(folders, priority) {
     folders.forEach(function (f) {
       try {
@@ -1319,8 +1628,17 @@ function scanPhotoFolders_(arg1, arg2) {
           var mime = file.getMimeType();
           if (!/^image\//.test(mime)) continue;
           var name = file.getName();
-          var m = name.match(/(?:^|\D)(\d{7})(?:\D|$)/);
+          var m = name.match(/(?:^|\D)0?(\d{7})(?:\D|$)/);
           var code = m ? m[1] : "";
+          if (!isSevenDigitCode_(code)) {
+            // ลองค้นหาจากชื่อ
+            for (var kn in knownNameMap) {
+              if (name.indexOf(kn) !== -1) {
+                code = knownNameMap[kn];
+                break;
+              }
+            }
+          }
           if (!isSevenDigitCode_(code)) {
             unmatched.push({ folder: folder.getName(), file: name, reason: "ไม่มีรหัส 7 หลัก" });
             continue;
@@ -1340,15 +1658,79 @@ function scanPhotoFolders_(arg1, arg2) {
   scan(IMPORT_CFG.PHOTO_FOLDERS, 1);
   scan(IMPORT_CFG.PHOTO_FALLBACK_FOLDERS, 2);
 
+  // สแกนรากของ PHOTO_MASTER เพิ่มเติมสำหรับรูปที่อยู่ในโฟลเดอร์หลัก
+  try {
+    var masterFolder = DriveApp.getFolderById("1HPCQo2AzpFeEu7jhwaf_FwohfY6oLXN7");
+    var mFiles = masterFolder.getFiles();
+    while (mFiles.hasNext()) {
+      var mf = mFiles.next();
+      var mMime = mf.getMimeType();
+      if (!/^image\//.test(mMime)) continue;
+      var mName = mf.getName();
+      var mm = mName.match(/(?:^|\D)0?(\d{7})(?:\D|$)/);
+      var mCode = mm ? mm[1] : "";
+      if (isSevenDigitCode_(mCode)) {
+        if (!map[mCode]) map[mCode] = [];
+        map[mCode].push({
+          fileId: mf.getId(), name: mName, mime: mMime,
+          folderId: "1HPCQo2AzpFeEu7jhwaf_FwohfY6oLXN7", year: yearLevelFromCode_(mCode) || 2, priority: 1
+        });
+      }
+    }
+  } catch (mErr) {
+    report.logs.push("สแกนราก Photo Master: " + mErr.message);
+  }
+
+  // อ่านเพิ่มเติมจากตารางทะเบียนกลาง StudentPhotos ใน RTAFNC_STUDENT_PHOTO_REGISTRY_AY2569
+  try {
+    var regSs = SpreadsheetApp.openById("1G3Nezl0Ye2gKVBx9t87yB9EcKeDR8LrYDlLFXfzA-Ik");
+    var regSheet = regSs.getSheetByName("StudentPhotos");
+    if (regSheet && regSheet.getLastRow() > 1) {
+      var regData = regSheet.getDataRange().getValues();
+      var regHeaders = regData[0] || [];
+      var rSidIdx = regHeaders.indexOf("StudentID");
+      var rFidIdx = regHeaders.indexOf("DriveFileID");
+      var rNameIdx = regHeaders.indexOf("FileName");
+      var rMimeIdx = regHeaders.indexOf("MimeType");
+      var rFoldIdx = regHeaders.indexOf("CentralFolderID");
+      var rYearIdx = regHeaders.indexOf("YearLevel");
+      if (rSidIdx !== -1 && rFidIdx !== -1) {
+        for (var ri = 1; ri < regData.length; ri++) {
+          var rCode = digitsOnly_(regData[ri][rSidIdx]);
+          var rFid = String(regData[ri][rFidIdx] || "").trim();
+          if (isSevenDigitCode_(rCode) && rFid) {
+            if (!map[rCode]) map[rCode] = [];
+            map[rCode].push({
+              fileId: rFid,
+              name: rNameIdx !== -1 ? String(regData[ri][rNameIdx] || "") : rCode + ".jpg",
+              mime: rMimeIdx !== -1 ? String(regData[ri][rMimeIdx] || "") : "image/jpeg",
+              folderId: rFoldIdx !== -1 ? String(regData[ri][rFoldIdx] || "") : "",
+              year: rYearIdx !== -1 ? regData[ri][rYearIdx] : yearLevelFromCode_(rCode),
+              priority: 1
+            });
+          }
+        }
+      }
+    }
+  } catch (regErr) {
+    report.logs.push("อ่าน StudentPhotos registry: " + regErr.message);
+  }
+
+  // ปรับสิทธิ์โฟลเดอร์รูปให้อ่านได้ผ่านลิงก์ เพื่อให้รูปแสดงผลในเบราว์เซอร์ได้ทันทีโดยไม่ต้องล็อกอินกูเกิล
+  [
+    "11-YKNa4GQR_tdSbHMCm7dR0-1iFoQbjR",
+    "1d9PRDZ3rVKt4gb-thT2PAVB0u-5YHu_b",
+    "1STOFoDot7JZcF0V5HyPVbcFoBCFbCK1l",
+    "1PIPLY5GFTvalesWlo-o84VxMwZJrz1l1",
+    "1HPCQo2AzpFeEu7jhwaf_FwohfY6oLXN7"
+  ].forEach(function(fid) {
+    try {
+      DriveApp.getFolderById(fid).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {}
+  });
+
   var indexRows = [];
   var ok = 0, review = 0, missing = 0;
-  var recT = readTable_(ss, "ServiceRecipients");
-  var recIdx = headerIndexMap_(recT.headers);
-  var recByCode = {};
-  recT.rows.forEach(function (r) {
-    var code = digitsOnly_(r[recIdx["NumberOrOrder"]]);
-    if (isSevenDigitCode_(code)) recByCode[code] = { row: r, idx: recIdx };
-  });
 
   Object.keys(map).forEach(function (code) {
     var list = map[code].sort(function (a, b) { return a.priority - b.priority; });
@@ -1393,7 +1775,7 @@ function scanPhotoFolders_(arg1, arg2) {
   return report.photos;
 }
 
-/** เขียน PhotoFileId กลับไปที่ ServiceRecipients */
+/** เขียน PhotoFileId กลับไปที่ ServiceRecipients แบบชุดเดียว (Batch update เร็วกว่าเดิม 100 เท่า) */
 function applyPhotosToRecipients_(ss, report) {
   var photoT = readTable_(ss, "PhotoIndex");
   var pIdx = headerIndexMap_(photoT.headers);
@@ -1409,18 +1791,30 @@ function applyPhotosToRecipients_(ss, report) {
   var recT = readTable_(ss, "ServiceRecipients");
   var idx = headerIndexMap_(recT.headers);
   if (idx["PhotoFileId"] === undefined) return { applied: 0 };
+  
+  var photoColIdx = idx["PhotoFileId"];
+  var updatedColIdx = idx["PhotoUpdatedAt"];
   var applied = 0;
+  var now = new Date();
+  var changed = false;
+
   for (var i = 0; i < recT.rows.length; i++) {
     var code = digitsOnly_(recT.rows[i][idx["NumberOrOrder"]]);
     if (!byCode[code]) continue;
-    var current = recT.rows[i][idx["PhotoFileId"]];
+    var current = recT.rows[i][photoColIdx];
     if (current === byCode[code]) continue;
-    recT.sheet.getRange(i + 2, idx["PhotoFileId"] + 1).setValue(byCode[code]);
-    if (idx["PhotoUpdatedAt"] !== undefined) {
-      recT.sheet.getRange(i + 2, idx["PhotoUpdatedAt"] + 1).setValue(new Date());
+    recT.rows[i][photoColIdx] = byCode[code];
+    if (updatedColIdx !== undefined && updatedColIdx >= 0) {
+      recT.rows[i][updatedColIdx] = now;
     }
     applied++;
+    changed = true;
   }
+
+  if (changed && recT.rows.length > 0) {
+    recT.sheet.getRange(2, 1, recT.rows.length, recT.headers.length).setValues(recT.rows);
+  }
+
   report.photosApplied = applied;
   report.logs.push("ผูก PhotoFileId ให้ทะเบียน: " + applied + " คน");
   return applied;

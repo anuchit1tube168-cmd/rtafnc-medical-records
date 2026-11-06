@@ -143,6 +143,27 @@ export async function handleRequest(request, env) {
     return json(data);
   }
 
+  // Proxy student photo endpoint with Cloudflare Edge Caching
+  if (url.pathname.startsWith('/api/photo/')) {
+    const fileId = url.pathname.slice('/api/photo/'.length).trim();
+    if (!fileId || !/^[a-zA-Z0-9_-]{20,80}$/.test(fileId)) {
+      return json({ error: 'Invalid file ID' }, 400);
+    }
+    const driveUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+    try {
+      const driveRes = await fetch(driveUrl, { redirect: 'follow' });
+      const contentType = driveRes.headers.get('content-type') || '';
+      if (driveRes.ok && contentType.startsWith('image/')) {
+        const respHeaders = new Headers();
+        respHeaders.set('Content-Type', contentType);
+        respHeaders.set('Cache-Control', 'public, max-age=604800, immutable');
+        respHeaders.set('Access-Control-Allow-Origin', '*');
+        return new Response(driveRes.body, { status: 200, headers: respHeaders });
+      }
+    } catch (e) {}
+    return Response.redirect(`https://drive.google.com/thumbnail?id=${fileId}&sz=w400`, 302);
+  }
+
   // RPC Bridge endpoint
   if (url.pathname !== '/api/rpc') return json({ error: 'Not found' }, 404);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);

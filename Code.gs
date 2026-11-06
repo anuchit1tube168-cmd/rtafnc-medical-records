@@ -2426,7 +2426,16 @@ function getServiceRecipientById(sessionToken, id) {
   recipient.studentDocuments = readRecipientRecords_(ss, "StudentDocuments", matchesRecipient, "RecordedAt");
 
   // เชื่อมรูปประจำตัวจาก PhotoIndex หรือคอลัมน์ PhotoFileId ทันที
-  if (studentCode && typeof findPhotoMatchesByStudentCode_ === 'function') {
+  if (recipient.PhotoFileId) {
+    recipient.photo = {
+      fileId: recipient.PhotoFileId,
+      status: 'OK',
+      academicYear: '2569',
+      classYear: studentCode ? (studentCode.substring(0, 2) === '69' ? 1 : studentCode.substring(0, 2) === '68' ? 2 : studentCode.substring(0, 2) === '67' ? 3 : 4) : 1,
+      thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + recipient.PhotoFileId + '&sz=w400',
+      fileUrl: 'https://drive.google.com/uc?export=view&id=' + recipient.PhotoFileId
+    };
+  } else if (studentCode && typeof findPhotoMatchesByStudentCode_ === 'function') {
     const pMatch = findPhotoMatchesByStudentCode_(studentCode);
     if (pMatch && pMatch.matches && pMatch.matches.length > 0) {
       const best = pMatch.matches[0];
@@ -2442,14 +2451,6 @@ function getServiceRecipientById(sessionToken, id) {
         fileUrl: 'https://drive.google.com/uc?export=view&id=' + best.fileId
       };
     }
-  }
-  if (!recipient.photo && recipient.PhotoFileId) {
-    recipient.photo = {
-      fileId: recipient.PhotoFileId,
-      status: 'OK',
-      thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + recipient.PhotoFileId + '&sz=w400',
-      fileUrl: 'https://drive.google.com/uc?export=view&id=' + recipient.PhotoFileId
-    };
   }
 
   // ---------------------------------------------------------------------
@@ -2512,12 +2513,13 @@ function readRecipientRecords_(ss, sheetName, matchesRecipient, dateField) {
   const headers = data[0];
   const recIdx = headers.indexOf("RecipientID");
   const codeIdx = headers.indexOf("StudentCode");
+  const numIdx = headers.indexOf("NumberOrOrder");
   const dateIdx = headers.indexOf(dateField);
 
   const rows = [];
   for (let i = 1; i < data.length; i++) {
     const rid = recIdx >= 0 ? data[i][recIdx] : "";
-    const code = codeIdx >= 0 ? data[i][codeIdx] : "";
+    const code = codeIdx >= 0 ? data[i][codeIdx] : (numIdx >= 0 ? data[i][numIdx] : "");
     if (!matchesRecipient(rid, code)) continue;
     const item = {};
     headers.forEach((h, idx) => { item[h] = data[i][idx]; });

@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { chartReviewDecision } from './chart-review-policy.mjs';
+const actor={ verified:true,active:true,role:'Doctor',unitId:'U1' };
+const review={ unitId:'U1',status:'IN_REVIEW',revision:5,sourceCommitId:'A',latestCommitId:'A',codingVerified:true };
+const sample={actor,review,action:'sign',expectedRevision:5,requestId:'test-request-0000001',reason:'Clinically verified',enabled:true};
+test('write is disabled by default',()=>assert.equal(chartReviewDecision({...sample,enabled:undefined}).code,'WRITE_DISABLED'));
+test('doctor may sign only verified latest revision',()=>assert.deepEqual(chartReviewDecision(sample),{ok:true,nextStatus:'SIGNED',nextRevision:6,requestId:sample.requestId}));
+test('admin cannot sign',()=>assert.equal(chartReviewDecision({...sample,actor:{...actor,role:'Admin'}}).code,'FORBIDDEN_ROLE'));
+test('cross-unit denied',()=>assert.equal(chartReviewDecision({...sample,actor:{...actor,unitId:'U2'}}).code,'FORBIDDEN_SCOPE'));
+test('no verified session denied',()=>assert.equal(chartReviewDecision({...sample,actor:{...actor,verified:false}}).code,'UNAUTHORIZED'));
+test('stale revision denied',()=>assert.equal(chartReviewDecision({...sample,expectedRevision:4}).code,'REVISION_CONFLICT'));
+test('changed commit denied',()=>assert.equal(chartReviewDecision({...sample,review:{...review,latestCommitId:'B'}}).code,'SIGNOFF_GATES_MISSING'));
+test('unverified code denied',()=>assert.equal(chartReviewDecision({...sample,review:{...review,codingVerified:false}}).code,'SIGNOFF_GATES_MISSING'));
+test('missing signoff reason denied',()=>assert.equal(chartReviewDecision({...sample,reason:''}).code,'REASON_REQUIRED'));
+test('cannot sign draft',()=>assert.equal(chartReviewDecision({...sample,review:{...review,status:'DRAFT'}}).code,'INVALID_TRANSITION'));

@@ -2922,9 +2922,10 @@ let liffConfigData = null;
 
 function checkLiffModeOnLoad() {
   const params = new URLSearchParams(window.location.search);
-  // LINE returns ?error=... without the original query when the redirect URI is rejected.
-  const liffError = params.get('error_description') || params.get('error');
-  const isLiff = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff') || !!liffError;
+  const isExplicitLiff = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff');
+  // ตรวจสอบ error เฉพาะเมื่อเปิดในโหมด LIFF เท่านั้น ไม่ตรวจในโหมดเจ้าหน้าที่
+  const liffError = isExplicitLiff ? (params.get('error_description') || params.get('error')) : null;
+  const isLiff = isExplicitLiff;
 
   if (isLiff) {
     switchToLiffMode();
@@ -2948,6 +2949,9 @@ function checkLiffModeOnLoad() {
 
 function initLiffSdk() {
   if (typeof liff === 'undefined') return;
+  const params = new URLSearchParams(window.location.search);
+  const isLiffMode = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff') || (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient());
+  if (!isLiffMode) return; // ไม่รัน LIFF หรือ redirect หากเปิดหน้าหลักของเจ้าหน้าที่
 
   google.script.run
     .withSuccessHandler(function(config) {

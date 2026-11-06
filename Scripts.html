@@ -878,17 +878,19 @@ function handleSaveRecipient(e) {
  * ดูแฟ้มประวัติ (Profile Viewer)
  */
 function viewRecipientProfile(id) {
+  showLoading('กำลังเปิดแฟ้มประวัติสุขภาพ...');
   callBackend('getServiceRecipientById', [appState.sessionToken, id], function(r) {
+    hideLoading();
     appState.selectedRecipient = r;
     
     // ตั้งค่าแสดงผลข้อมูลส่วนตัว
     document.getElementById('profRecId').textContent = r.RecipientID;
-    document.getElementById('profFullName').textContent = `${r.Title}${r.FirstName} ${r.LastName} (${r.Nickname || '-'})`;
-    document.getElementById('profType').textContent = r.RecipientType;
+    document.getElementById('profFullName').textContent = `${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''} (${r.Nickname || '-'})`;
+    document.getElementById('profType').textContent = r.RecipientType || '-';
     document.getElementById('profGroup').textContent = `${r.Group || '-'} / ${r.Level || '-'}`;
     document.getElementById('profSubUnit').textContent = r.SubUnit || '-';
-    document.getElementById('profBlood').textContent = r.BloodType;
-    document.getElementById('profAge').textContent = `${r.Age} ปี (${formatDateThai(r.BirthDate)})`;
+    document.getElementById('profBlood').textContent = r.BloodType || '-';
+    document.getElementById('profAge').textContent = `${r.Age || '-'} ปี (${formatDateThai(r.BirthDate)})`;
     document.getElementById('profStatus').innerHTML = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
     
     // ตั้งค่ากล่องเตือนโรคประจำตัวและแพ้ยาพิเศษ
@@ -899,7 +901,7 @@ function viewRecipientProfile(id) {
       alertBox.innerHTML += `
         <div class="alert-box alert-danger">
           <i class="fas fa-exclamation-triangle"></i>
-          <div><strong>ประวัติแพ้ยาเฉียบพลัน:</strong> ${r.DrugAllergies}</div>
+          <div><strong>ประวัติแพ้ยาเฉียบพลัน:</strong> ${profEsc_(r.DrugAllergies)}</div>
         </div>
       `;
     }
@@ -908,7 +910,7 @@ function viewRecipientProfile(id) {
       alertBox.innerHTML += `
         <div class="alert-box alert-warning">
           <i class="fas fa-exclamation-triangle"></i>
-          <div><strong>โรคประจำตัว:</strong> ${r.CongenitalDiseases}</div>
+          <div><strong>โรคประจำตัว:</strong> ${profEsc_(r.CongenitalDiseases)}</div>
         </div>
       `;
     }
@@ -920,12 +922,13 @@ function viewRecipientProfile(id) {
     document.getElementById('profOtherAllergy').textContent = r.OtherAllergies || '-';
     document.getElementById('profRegularMed').textContent = r.RegularMedicines || '-';
     document.getElementById('profConstraint').textContent = r.HealthConstraints || '-';
-    document.getElementById('profContact').textContent = `${r.ContactName} (${r.ContactRelationship}) โทร: ${r.ContactPhone}`;
-    document.getElementById('profEmergency').textContent = `${r.EmergencyContact} โทร: ${r.EmergencyPhone}`;
+    document.getElementById('profContact').textContent = `${r.ContactName || '-'} (${r.ContactRelationship || '-'}) โทร: ${r.ContactPhone || '-'}`;
+    document.getElementById('profEmergency').textContent = `${r.EmergencyContact || '-'} โทร: ${r.EmergencyPhone || '-'}`;
     document.getElementById('profNote').textContent = r.Note || '-';
     
     renderProfileSummary(r);
     renderProfileVisits(r.visits || []);
+    renderProfileFollowUps(r.followUps || []);
     renderProfileVaccinations(r.vaccinations || []);
     renderProfileCertificates(r.certificates || []);
     renderProfileDocuments(r);
@@ -933,6 +936,9 @@ function viewRecipientProfile(id) {
     showProfileTab('overview');
     openModal('profileModal');
     loadRecipientPhoto(r);
+  }, function(err) {
+    hideLoading();
+    showToast('โหลดแฟ้มประวัติไม่สำเร็จ: ' + (err && err.message ? err.message : 'ข้อผิดพลาดระบบ'), 'error');
   });
 }
 
@@ -971,11 +977,18 @@ function renderProfileSummary(r) {
   const wrap = document.getElementById('profSummaryChips');
   if (!wrap) return;
   const s = r.summary || {};
+  const visitsCount = (r.visits || []).length;
+  const vaccCount = (r.vaccinations || []).length;
+  const certCount = (r.certificates || []).length;
+  const fuCount = (r.followUps || []).length;
+  const docCount = (r.studentDocuments || []).length + (r.documents || []).length;
+
   const chips = [
-    { key: 'visits', icon: 'fa-stethoscope', label: 'การเจ็บป่วย', value: s.totalVisits || 0 },
-    { key: 'vaccines', icon: 'fa-syringe', label: 'วัคซีน', value: s.totalVaccinations || 0 },
-    { key: 'certs', icon: 'fa-file-medical-alt', label: 'ใบรับรองแพทย์', value: s.totalCertificates || 0 },
-    { key: 'docs', icon: 'fa-folder-open', label: 'เอกสารแนบ', value: s.totalDocuments || 0 }
+    { key: 'visits', icon: 'fa-stethoscope', label: 'การเจ็บป่วย', value: visitsCount },
+    { key: 'followups', icon: 'fa-calendar-check', label: 'ใบนัดติดตาม', value: fuCount },
+    { key: 'vaccines', icon: 'fa-syringe', label: 'วัคซีน', value: vaccCount },
+    { key: 'certs', icon: 'fa-file-medical-alt', label: 'ใบรับรอง/ใบลา', value: certCount },
+    { key: 'docs', icon: 'fa-folder-open', label: 'เอกสารแนบ', value: docCount }
   ];
   wrap.innerHTML = chips.map(c => `
     <button type="button" class="profile-summary-chip" onclick="showProfileTab('${c.key}')">
@@ -989,10 +1002,11 @@ function renderProfileSummary(r) {
     const el = document.getElementById(id);
     if (el) el.textContent = n;
   };
-  setCount('profTabVisitCount', s.totalVisits || 0);
-  setCount('profTabVaccineCount', s.totalVaccinations || 0);
-  setCount('profTabCertCount', s.totalCertificates || 0);
-  setCount('profTabDocCount', s.totalDocuments || 0);
+  setCount('profTabVisitCount', visitsCount);
+  setCount('profTabFollowUpCount', fuCount);
+  setCount('profTabVaccineCount', vaccCount);
+  setCount('profTabCertCount', certCount);
+  setCount('profTabDocCount', docCount);
 }
 
 /** ตารางประวัติการเข้ารับบริการ + การวินิจฉัย/การรักษา */
@@ -1009,11 +1023,21 @@ function renderProfileVisits(visits) {
     const dx = v.Diagnosis || v.InitialAssessment || '-';
     const tx = v.TreatmentDetails || v.Outcome || '-';
     const place = v.IncidentLocation || '-';
+    const hasFollowUp = v.FollowUpScheduled || /นัด|follow/i.test(String(v.Outcome || '') + ' ' + String(v.IncidentType || '') + ' ' + String(v.ChiefComplaint || ''));
+    const hasLeave = /พัก|ลา|นอนพัก/i.test(String(v.Outcome || '') + ' ' + String(v.IncidentType || '') + ' ' + String(v.TreatmentDetails || ''));
+    
+    let badges = '';
+    if (hasFollowUp) badges += '<span class="badge badge-info mr-1" title="มีนัดหมายติดตามอาการ"><i class="fas fa-calendar-check"></i> มีนัด</span> ';
+    if (hasLeave) badges += '<span class="badge badge-warning" title="มีการสั่งพักรักษาตัว/ใบลา"><i class="fas fa-bed"></i> พักฟื้น</span>';
+
     return `
       <tr>
-        <td>${profEsc_(v.VisitID)}</td>
-        <td>${profDate_(v.VisitDate)} ${profEsc_(v.TimeIn)} น.</td>
-        <td>${profEsc_(v.ChiefComplaint || '-')}</td>
+        <td><strong>${profEsc_(v.VisitID)}</strong></td>
+        <td>${profDate_(v.VisitDate)} ${profEsc_(v.TimeIn ? String(v.TimeIn).substring(11, 16) || v.TimeIn : '')} น.</td>
+        <td>
+          <div>${profEsc_(v.ChiefComplaint || '-')}</div>
+          ${badges ? `<div class="mt-1">${badges}</div>` : ''}
+        </td>
         <td>
           <div><strong>Dx:</strong> ${profEsc_(dx)}</div>
           <div class="text-muted"><strong>Rx:</strong> ${profEsc_(tx)}</div>
@@ -1025,6 +1049,38 @@ function renderProfileVisits(visits) {
         <td>${profEsc_(v.RecordedBy || '-')}</td>
         <td>
           <button class="btn btn-outline btn-sm" onclick="viewVisitDetails('${profEsc_(v.VisitID)}')"><i class="fas fa-eye"></i> ดูใบรักษา</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+/** ตารางใบนัดติดตามอาการ */
+function renderProfileFollowUps(list) {
+  const tbody = document.getElementById('profileFollowUpsTableBody');
+  if (!tbody) return;
+
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center">ไม่พบใบนัดหรือประวัติติดตามอาการ</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(f => {
+    const isDone = f.Status === 'Completed' || f.Status === 'เสร็จสิ้น';
+    const statusBadge = isDone
+      ? '<span class="badge badge-success"><i class="fas fa-check"></i> ติดตามแล้ว</span>'
+      : '<span class="badge badge-warning"><i class="fas fa-clock"></i> รอนัดหมาย</span>';
+    return `
+      <tr>
+        <td><strong>${profEsc_(f.FollowUpID || '-')}</strong></td>
+        <td>${profDate_(f.ScheduledDate || f.FollowUpDate)}</td>
+        <td>${profEsc_(f.ScheduledTime || f.FollowUpTime || '-')} น.</td>
+        <td>${profEsc_(f.Reason || f.Topic || f.ChiefComplaint || 'ติดตามอาการต่อเนื่อง')}</td>
+        <td>${profEsc_(f.Location || f.Hospital || 'ห้องพยาบาล วพอ.')}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <div>${profEsc_(f.FollowUpNotes || f.Outcome || '-')}</div>
+          ${f.ConductedBy ? `<small class="text-muted">ผู้บันทึก: ${profEsc_(f.ConductedBy)}</small>` : ''}
         </td>
       </tr>
     `;
@@ -1053,13 +1109,13 @@ function renderProfileVaccinations(list) {
   `).join('');
 }
 
-/** ตารางใบรับรองแพทย์ */
+/** ตารางใบรับรองแพทย์ / ใบลาพักรักษาตัว */
 function renderProfileCertificates(list) {
   const tbody = document.getElementById('profileCertsTableBody');
   if (!tbody) return;
 
   if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center">ไม่พบใบรับรองแพทย์</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center">ไม่พบใบรับรองแพทย์หรือใบลาพักรักษาตัว</td></tr>';
     return;
   }
 
@@ -1067,15 +1123,20 @@ function renderProfileCertificates(list) {
     const url = String(c.FileUrl || '');
     const safeUrl = /^https?:\/\//i.test(url) ? url : '';
     const link = safeUrl
-      ? `<a class="btn btn-outline btn-sm" href="${profEsc_(safeUrl)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> เปิดไฟล์</a>`
-      : '-';
+      ? `<a class="btn btn-primary btn-sm" href="${profEsc_(safeUrl)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> เปิดไฟล์ใบรับรอง</a>`
+      : '<span class="text-muted">ไม่มีไฟล์แนบ</span>';
+    const hosp = c.Hospital || 'รพ.ภูมิพลอดุลยเดช พอ.';
+    const dx = c.Diagnosis || c.Note || 'ใบรับรองการตรวจรักษาและพักฟื้น';
     return `
       <tr>
         <td>${profDate_(c.IssueDate)}</td>
-        <td>${profEsc_(c.Hospital || '-')}</td>
-        <td>${profEsc_(c.Diagnosis || '-')}</td>
-        <td>${profEsc_(c.Doctor || '-')}</td>
-        <td>${profEsc_(c.Note || '-')}</td>
+        <td><span class="badge badge-primary"><i class="fas fa-file-medical"></i> ใบรับรองแพทย์</span></td>
+        <td><strong>${profEsc_(c.Doctor || '-')}</strong></td>
+        <td>${profEsc_(hosp)}</td>
+        <td>
+          <div>${profEsc_(dx)}</div>
+          ${c.Note && c.Note !== dx ? `<small class="text-muted">${profEsc_(c.Note)}</small>` : ''}
+        </td>
         <td>${link}</td>
       </tr>
     `;
@@ -1152,7 +1213,7 @@ function renderProfileDocuments(r) {
 
 /**
  * โหลดรูปประจำตัว นพอ. จาก Student Photo Master (จับคู่ด้วยรหัส 7 หลัก)
- * ไม่เดารูปจากชื่อ — ถ้าไม่พบจะแจ้งสถานะให้เจ้าหน้าที่ตรวจสอบ
+ * แสดงภาพทันทีผ่าน CDN thumbnail และ fallback ไป dataUrl อัตโนมัติ
  */
 function loadRecipientPhoto(r) {
   const img = document.getElementById('profPhotoImg');
@@ -1178,32 +1239,56 @@ function loadRecipientPhoto(r) {
   statusEl.textContent = 'กำลังโหลดรูปประจำตัว...';
   statusEl.className = 'profile-photo-status';
 
-  callBackend('resolveStudentPhoto', [appState.sessionToken, code, true], function (res) {
-    if (res && res.success && res.dataUrl) {
-      img.src = res.dataUrl;
+  const fid = (r.photo && r.photo.fileId) || r.PhotoFileId;
+  let fallbackStarted = false;
+
+  const runFallbackDataUrl = () => {
+    if (fallbackStarted) return;
+    fallbackStarted = true;
+    callBackend('resolveStudentPhoto', [appState.sessionToken, code, true], function (res) {
+      if (res && res.success && res.dataUrl) {
+        img.src = res.dataUrl;
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+        statusEl.textContent = `รูปจากทะเบียนกลาง ปีการศึกษา ${res.academicYear || '2569'} • ชั้นปีที่ ${res.classYear || '-'}`;
+        statusEl.className = 'profile-photo-status ok';
+        return;
+      }
+
+      const map = {
+        PHOTO_MISSING: 'ยังไม่มีไฟล์รูปในโฟลเดอร์ของชั้นปีนี้',
+        PHOTO_REVIEW_REQUIRED: 'พบไฟล์รูปมากกว่า 1 ไฟล์ ต้องตรวจสอบก่อนใช้งาน',
+        PHOTO_ROUTE_NOT_CONFIGURED: 'ยังไม่ได้ตั้งค่าโฟลเดอร์รูปของชั้นปีนี้',
+        PHOTO_MODULE_DISABLED: 'ปิดใช้งานโมดูลรูปอยู่ในขณะนี้'
+      };
+      const status = res && res.status;
+      statusEl.textContent = map[status] || 'ไม่พบรูปประจำตัว';
+      statusEl.className = 'profile-photo-status warn';
+      if (status === 'PHOTO_REVIEW_REQUIRED' && res.matchCount) {
+        placeholder.innerHTML = '<i class="fas fa-images"></i>';
+      }
+    }, function (err) {
+      statusEl.textContent = 'โหลดรูปไม่สำเร็จ: ' + (err && err.message ? err.message : 'ไม่ทราบสาเหตุ');
+      statusEl.className = 'profile-photo-status err';
+    });
+  };
+
+  if (fid) {
+    const testImg = new Image();
+    testImg.onload = function() {
+      img.src = testImg.src;
       img.style.display = 'block';
       placeholder.style.display = 'none';
-      statusEl.textContent = `รูปจากทะเบียนกลาง ปีการศึกษา ${res.academicYear || '2569'} • ชั้นปีที่ ${res.classYear || '-'}`;
+      statusEl.textContent = 'รูปจากทะเบียนกลาง (Student Photo Master 2569)';
       statusEl.className = 'profile-photo-status ok';
-      return;
-    }
-
-    const map = {
-      PHOTO_MISSING: 'ยังไม่มีไฟล์รูปในโฟลเดอร์ของชั้นปีนี้',
-      PHOTO_REVIEW_REQUIRED: 'พบไฟล์รูปมากกว่า 1 ไฟล์ ต้องตรวจสอบก่อนใช้งาน',
-      PHOTO_ROUTE_NOT_CONFIGURED: 'ยังไม่ได้ตั้งค่าโฟลเดอร์รูปของชั้นปีนี้',
-      PHOTO_MODULE_DISABLED: 'ปิดใช้งานโมดูลรูปอยู่ในขณะนี้'
     };
-    const status = res && res.status;
-    statusEl.textContent = map[status] || 'ไม่พบรูปประจำตัว';
-    statusEl.className = 'profile-photo-status warn';
-    if (status === 'PHOTO_REVIEW_REQUIRED' && res.matchCount) {
-      placeholder.innerHTML = '<i class="fas fa-images"></i>';
-    }
-  }, function (err) {
-    statusEl.textContent = 'โหลดรูปไม่สำเร็จ: ' + (err && err.message ? err.message : 'ไม่ทราบสาเหตุ');
-    statusEl.className = 'profile-photo-status err';
-  });
+    testImg.onerror = function() {
+      runFallbackDataUrl();
+    };
+    testImg.src = 'https://drive.google.com/thumbnail?id=' + fid + '&sz=w400';
+  } else {
+    runFallbackDataUrl();
+  }
 }
 
 // ==========================================

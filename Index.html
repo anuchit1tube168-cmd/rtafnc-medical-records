@@ -1246,11 +1246,14 @@
           <button type="button" class="profile-tab" data-tab="visits" onclick="showProfileTab('visits')">
             <i class="fas fa-stethoscope"></i> การเจ็บป่วย <span class="profile-tab-count" id="profTabVisitCount">0</span>
           </button>
+          <button type="button" class="profile-tab" data-tab="followups" onclick="showProfileTab('followups')">
+            <i class="fas fa-calendar-check"></i> ใบนัดติดตามอาการ <span class="profile-tab-count" id="profTabFollowUpCount">0</span>
+          </button>
           <button type="button" class="profile-tab" data-tab="vaccines" onclick="showProfileTab('vaccines')">
             <i class="fas fa-syringe"></i> วัคซีน <span class="profile-tab-count" id="profTabVaccineCount">0</span>
           </button>
           <button type="button" class="profile-tab" data-tab="certs" onclick="showProfileTab('certs')">
-            <i class="fas fa-file-medical-alt"></i> ใบรับรองแพทย์ <span class="profile-tab-count" id="profTabCertCount">0</span>
+            <i class="fas fa-file-medical-alt"></i> ใบรับรองแพทย์ / ใบลา <span class="profile-tab-count" id="profTabCertCount">0</span>
           </button>
           <button type="button" class="profile-tab" data-tab="docs" onclick="showProfileTab('docs')">
             <i class="fas fa-folder-open"></i> เอกสารแนบ <span class="profile-tab-count" id="profTabDocCount">0</span>
@@ -1315,6 +1318,29 @@
         </div>
         </div><!-- /profTab-visits -->
 
+        <!-- ใบนัดติดตามอาการ -->
+        <div class="profile-tab-pane" id="profTab-followups">
+          <h5 class="section-title mb-2">ประวัติการนัดหมายและติดตามอาการ (Follow-Ups)</h5>
+          <div class="table-responsive">
+            <table class="table-custom" style="font-size:0.85rem;">
+              <thead>
+                <tr>
+                  <th>รหัสนัดหมาย</th>
+                  <th>วันที่นัดตรวจ</th>
+                  <th>เวลา</th>
+                  <th>เรื่อง / วัตถุประสงค์</th>
+                  <th>สถานที่</th>
+                  <th>สถานะนัด</th>
+                  <th>บันทึกติดตาม</th>
+                </tr>
+              </thead>
+              <tbody id="profileFollowUpsTableBody">
+                <tr><td colspan="7" class="text-center">กำลังโหลดข้อมูล...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- วัคซีน -->
         <div class="profile-tab-pane" id="profTab-vaccines">
           <h5 class="section-title mb-2">ประวัติการได้รับวัคซีน</h5>
@@ -1337,19 +1363,19 @@
           </div>
         </div>
 
-        <!-- ใบรับรองแพทย์ -->
+        <!-- ใบรับรองแพทย์ / ใบลา -->
         <div class="profile-tab-pane" id="profTab-certs">
-          <h5 class="section-title mb-2">ใบรับรองแพทย์ / เอกสารรับรองการรักษา</h5>
+          <h5 class="section-title mb-2">ใบรับรองแพทย์ / เอกสารรับรองการรักษาและวันลาพักรักษาตัว</h5>
           <div class="table-responsive">
             <table class="table-custom" style="font-size:0.85rem;">
               <thead>
                 <tr>
                   <th>วันที่ออก</th>
-                  <th>โรงพยาบาล</th>
-                  <th>การวินิจฉัย</th>
+                  <th>ประเภทเอกสาร</th>
                   <th>แพทย์ผู้รับรอง</th>
-                  <th>หมายเหตุ</th>
-                  <th>ไฟล์</th>
+                  <th>สถานพยาบาล</th>
+                  <th>การวินิจฉัย / วันลาพัก</th>
+                  <th>เปิดดูไฟล์</th>
                 </tr>
               </thead>
               <tbody id="profileCertsTableBody">

@@ -56,7 +56,59 @@ function findPhotoMatchesByStudentCode_(studentCode) {
   }
 
   const prefix = code.substring(0, 2);
-  const folderId = cfg.folderByPrefix[prefix];
+
+  // 1. ค้นหาด่วนจากตาราง PhotoIndex (เร็วระดับมิลลิวินาที ไม่ต้องสแกน Drive)
+  try {
+    const ss = getSpreadsheet();
+    const photoSheet = ss.getSheetByName('PhotoIndex');
+    if (photoSheet && photoSheet.getLastRow() > 1) {
+      const pData = photoSheet.getDataRange().getValues();
+      const pHeaders = pData[0] || [];
+      const cIdx = pHeaders.indexOf('StudentCode');
+      const fIdx = pHeaders.indexOf('FileID');
+      const nIdx = pHeaders.indexOf('FileName');
+      const mIdx = pHeaders.indexOf('MimeType');
+      const yIdx = pHeaders.indexOf('YearLevel');
+      const foldIdx = pHeaders.indexOf('FolderID');
+      if (cIdx !== -1 && fIdx !== -1) {
+        for (let i = 1; i < pData.length; i++) {
+          const rowCode = String(pData[i][cIdx] || '').replace(/\D/g, '');
+          if (rowCode === code) {
+            const fid = String(pData[i][fIdx] || '').trim();
+            if (fid) {
+              const mime = mIdx !== -1 && pData[i][mIdx] ? String(pData[i][mIdx]) : 'image/jpeg';
+              return {
+                code: code,
+                config: cfg,
+                matches: [{
+                  fileId: fid,
+                  name: nIdx !== -1 ? String(pData[i][nIdx] || '') : `${code}.jpg`,
+                  mimeType: mime,
+                  size: 2000000,
+                  folderId: foldIdx !== -1 ? String(pData[i][foldIdx] || '') : '',
+                  classYear: yIdx !== -1 ? pData[i][yIdx] : cfg.classYearByPrefix[prefix],
+                  prefix: prefix,
+                  webCompatible: isWebCompatibleImage_(mime)
+                }],
+                status: 'OK'
+              };
+            }
+          }
+        }
+      }
+    }
+  } catch (sheetErr) {
+    Logger.log('PhotoIndex fast lookup note: ' + sheetErr.message);
+  }
+
+  // 2. Fallback สแกนโฟลเดอร์ Google Drive หากไม่มีในตารางดัชนี
+  const OFFICIAL_FOLDERS = {
+    '69': '11-YKNa4GQR_tdSbHMCm7dR0-1iFoQbjR',
+    '68': '1d9PRDZ3rVKt4gb-thT2PAVB0u-5YHu_b',
+    '67': '1STOFoDot7JZcF0V5HyPVbcFoBCFbCK1l',
+    '66': '1PIPLY5GFTvalesWlo-o84VxMwZJrz1l1'
+  };
+  const folderId = OFFICIAL_FOLDERS[prefix] || cfg.folderByPrefix[prefix];
   if (!folderId) {
     return { code: code, config: cfg, matches: [], status: 'PHOTO_ROUTE_NOT_CONFIGURED' };
   }
@@ -100,8 +152,9 @@ function resolveStudentPhoto(sessionToken, studentCode, includeDataUrl) {
   validateSession(sessionToken);
 
   const result = findPhotoMatchesByStudentCode_(studentCode);
+  const hasMatches = result.matches && result.matches.length > 0;
   const response = {
-    success: result.status === 'OK',
+    success: hasMatches,
     status: result.status,
     studentCode: result.code,
     academicYear: result.config.academicYear,
@@ -112,11 +165,11 @@ function resolveStudentPhoto(sessionToken, studentCode, includeDataUrl) {
     size: 0,
     webCompatible: false,
     needsDerivative: false,
-    dataUrl: ''
+    dataUrl: '',
+    matchCount: result.matches ? result.matches.length : 0
   };
 
-  if (result.matches.length !== 1) {
-    response.matchCount = result.matches.length;
+  if (!hasMatches) {
     return response;
   }
 
@@ -128,10 +181,16 @@ function resolveStudentPhoto(sessionToken, studentCode, includeDataUrl) {
   response.size = match.size;
   response.webCompatible = match.webCompatible;
   response.needsDerivative = !match.webCompatible || match.size > PHOTO_INLINE_MAX_BYTES;
+  response.thumbnailUrl = 'https://drive.google.com/thumbnail?id=' + match.fileId + '&sz=w400';
+  response.fileUrl = 'https://drive.google.com/uc?export=view&id=' + match.fileId;
 
   if (includeDataUrl === true && match.webCompatible && match.size <= PHOTO_INLINE_MAX_BYTES) {
-    const blob = DriveApp.getFileById(match.fileId).getBlob();
-    response.dataUrl = 'data:' + match.mimeType + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    try {
+      const blob = DriveApp.getFileById(match.fileId).getBlob();
+      response.dataUrl = 'data:' + match.mimeType + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    } catch (blobErr) {
+      Logger.log('Drive blob error: ' + blobErr.message);
+    }
   }
 
   return response;

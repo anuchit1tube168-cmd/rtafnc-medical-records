@@ -1353,7 +1353,8 @@ function scanPhotoFolders_(arg1, arg2) {
   Object.keys(map).forEach(function (code) {
     var list = map[code].sort(function (a, b) { return a.priority - b.priority; });
     var best = list[0];
-    var status = list.length > 1 ? "PHOTO_REVIEW_REQUIRED" : "OK";
+    var p1Count = list.filter(function (x) { return x.priority === 1; }).length;
+    var status = p1Count > 1 ? "PHOTO_REVIEW_REQUIRED" : "OK";
     if (status === "OK") ok++; else review++;
     var rec = recByCode[code];
     indexRows.push([
@@ -1399,8 +1400,9 @@ function applyPhotosToRecipients_(ss, report) {
   var byCode = {};
   photoT.rows.forEach(function (r) {
     var code = digitsOnly_(r[pIdx["StudentCode"]]);
-    if (isSevenDigitCode_(code) && String(r[pIdx["Status"]]) === "OK") {
-      byCode[code] = r[pIdx["FileID"]];
+    var fid = String(r[pIdx["FileID"]] || "").trim();
+    if (isSevenDigitCode_(code) && fid) {
+      byCode[code] = fid;
     }
   });
 

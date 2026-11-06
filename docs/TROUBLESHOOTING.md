@@ -54,6 +54,7 @@ GAS_BRIDGE_SECRET='<ค่าเดียวกัน>' SPREADSHEET_ID='<id ช�
 | ค้นด้วยรหัสแล้วไม่พบ | ตรวจว่า `NumberOrOrder` ในชีต `ServiceRecipients` เก็บรหัส 7 หลักจริง |
 | หน้า LIFF ขาว หรือเปิดแล้วไม่ขึ้น | Endpoint URL ต้องเป็น `<Worker URL>/?page=liff` และค่า `liffId` ต้องไม่ว่าง |
 | `getLiffConfig` คืน `liffId` เป็นค่าว่าง | ยังไม่ได้ใส่ `LINE_LIFF_ID` ตอน build หรือยังไม่ได้อัป `Backend.gs` เวอร์ชันใหม่ |
+| เปิด LIFF แล้วขึ้น `invalid url` จาก LINE | ยังไม่ได้ใส่ Callback URL ของ channel | เพิ่ม `<Worker URL>/?page=liff` ใน Basic settings > Callback URL |
 | เปิด LIFF ได้แต่คนอื่นใช้ไม่ได้ | LINE Login channel ยังเป็น Developing ต้องกด Publish |
 
 ## Telegram ไม่ส่งข้อความ

@@ -157,7 +157,14 @@ https://<Worker URL>/?page=liff
 ต้องมี `?page=liff` ต่อท้าย เพราะหน้า LIFF ของระบบนี้เปิดด้วยพารามิเตอร์นี้ ไม่ใช่ `/` อย่างเดียว
 
 5. เปิด scopes `openid` และ `profile` แล้วกด Save
-6. ถ้า channel ยังเป็นสถานะ Developing ให้กด **Publish** ก่อนเปิดให้ นพอ. คนอื่นใช้จริง
+6. กลับไปแท็บ **Basic settings** ของ channel แล้วเพิ่ม **Callback URL** เป็นค่าเดียวกับ Endpoint URL
+
+```
+https://<Worker URL>/?page=liff
+```
+
+ถ้าไม่ใส่ข้อนี้ กดเข้าสู่ระบบ LINE แล้วจะได้ error `invalid url` และกลับมาที่หน้าเดิม
+7. ถ้า channel ยังเป็นสถานะ Developing ให้กด **Publish** ก่อนเปิดให้ นพอ. คนอื่นใช้จริง
 
 ### 9.2 ฝังค่าแล้ว deploy สองฝั่ง
 

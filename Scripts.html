@@ -144,6 +144,11 @@ function initApp() {
   // หากมีโทเคนอยู่แล้ว ให้ทำการตรวจสอบสิทธิ์อัตโนมัติ
   if (appState.sessionToken) {
     verifySessionToken();
+  } else if (isLiff) {
+    // หน้า LINE LIFF มีหน้าจอของตัวเอง ไม่ต้องแสดงฟอร์มเจ้าหน้าที่ซ้อน
+    document.getElementById('loginView').style.display = 'none';
+    document.getElementById('appView').style.display = 'none';
+    hideLoading();
   } else {
     document.getElementById('loginView').style.display = 'flex';
     document.getElementById('appView').style.display = 'none';
@@ -2661,10 +2666,19 @@ let liffConfigData = null;
 
 function checkLiffModeOnLoad() {
   const params = new URLSearchParams(window.location.search);
-  const isLiff = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff');
-  
+  // LINE returns ?error=... without the original query when the redirect URI is rejected.
+  const liffError = params.get('error_description') || params.get('error');
+  const isLiff = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff') || !!liffError;
+
   if (isLiff) {
     switchToLiffMode();
+    if (liffError) {
+      console.error('LINE login error:', params.get('error'), params.get('error_description'));
+      setTimeout(function() {
+        showToast('เข้าสู่ระบบ LINE ไม่สำเร็จ กรุณาเปิดหน้านี้ผ่านแอป LINE อีกครั้ง หรือแจ้งผู้ดูแลระบบ', 'warning');
+      }, 300);
+      return true;
+    }
     const studentIdParam = params.get('id') || params.get('studentId');
     if (studentIdParam && studentIdParam.trim().length === 7) {
       setTimeout(function() {

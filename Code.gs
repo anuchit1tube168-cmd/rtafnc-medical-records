@@ -343,8 +343,8 @@ function doGet(e) {
         const lnIdx = headers.indexOf("LastName");
         const grpIdx = headers.indexOf("Group");
         const deptIdx = headers.indexOf("Department");
-        const bloodIdx = headers.indexOf("BloodGroup");
-        const allergyIdx = headers.indexOf("AllergyMedication");
+        const bloodIdx = headers.indexOf("BloodType") > -1 ? headers.indexOf("BloodType") : headers.indexOf("BloodGroup");
+        const allergyIdx = headers.indexOf("DrugAllergies") > -1 ? headers.indexOf("DrugAllergies") : headers.indexOf("AllergyMedication");
         const diseaseIdx = headers.indexOf("CongenitalDiseases");
         const students = [];
         for (let i = 1; i < data.length; i++) {
@@ -356,13 +356,68 @@ function doGet(e) {
               fullName: (row[titleIdx] || "") + (row[fnIdx] || "") + " " + (row[lnIdx] || ""),
               group: row[grpIdx] || "-",
               dept: row[deptIdx] || "-",
-              blood: row[bloodIdx] || "-",
-              allergy: row[allergyIdx] || "-",
-              disease: row[diseaseIdx] || "-"
+              blood: (bloodIdx > -1 ? row[bloodIdx] : "-") || "-",
+              allergy: (allergyIdx > -1 ? row[allergyIdx] : "-") || "-",
+              disease: (diseaseIdx > -1 ? row[diseaseIdx] : "-") || "-"
             });
           }
         }
         jsonResult = { success: true, count: students.length, spreadsheet: ss.getName() + " (" + ss.getId() + ")", students: students };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "cleanPlaceholders") {
+      try {
+        const ss = getSpreadsheet();
+        const recSheet = ss.getSheetByName("ServiceRecipients");
+        const dummyIds = new Set(["6801001", "6801002", "6801003", "6801004", "6701001", "6701002", "6701003", "6601001", "6601002", "6501001", "6501002", "มท1", "OPD/00001", "fgsf"]);
+        const recData = recSheet.getDataRange().getValues();
+        const header = recData[0];
+        const numIdx = header.indexOf("NumberOrOrder");
+        const filtered = [header];
+        let removed = 0;
+        for (let i = 1; i < recData.length; i++) {
+          const sid = String(recData[i][numIdx] || "").trim();
+          if (dummyIds.has(sid)) {
+            removed++;
+          } else {
+            filtered.push(recData[i]);
+          }
+        }
+        if (removed > 0) {
+          recSheet.clearContents();
+          recSheet.getRange(1, 1, filtered.length, header.length).setValues(filtered);
+        }
+        jsonResult = { success: true, removedPlaceholders: removed, remainingStudents: filtered.length - 1 };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "testTelegram") {
+      try {
+        const botToken = getBackendConfig("TELEGRAM_BOT_TOKEN") || TELEGRAM_BOT_TOKEN;
+        const chatId = getBackendConfig("TELEGRAM_CHAT_ID") || TELEGRAM_CHAT_ID;
+        if (!botToken || !chatId) {
+          jsonResult = { success: false, error: "ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID" };
+        } else {
+          const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "dd/MM/yyyy HH:mm:ss");
+          const testMsg = `🔔 <b>ทดสอบการเชื่อมต่อระบบแจ้งเตือน Telegram เวชระเบียน วพอ.</b>\nเวลา: ${nowStr} น.\nสถานะ: เชื่อมต่อสำเร็จ 100% ✅`;
+          const res = sendTelegramNotification(testMsg);
+          jsonResult = { success: true, telegramResponse: res };
+        }
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "testLine") {
+      try {
+        const token = getBackendConfig("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN");
+        if (!token) {
+          jsonResult = { success: false, error: "ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN" };
+        } else {
+          const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "dd/MM/yyyy HH:mm:ss");
+          const testMsg = `🔔 [แจ้งเตือนระบบเวชระเบียน วพอ.] ทดสอบการเชื่อมต่อสำเร็จ เวลา ${nowStr} น.`;
+          const res = sendLineNotification(testMsg);
+          jsonResult = { success: true, lineResponse: res };
+        }
       } catch (err) {
         jsonResult = { success: false, error: err.message };
       }
@@ -485,6 +540,16 @@ function doGet(e) {
       } catch (lErr) {
         jsonResult = { success: false, error: lErr.message };
       }
+    } else if (api === "testDashboard") {
+      try {
+        const u = e.parameter.u || "admin";
+        const p = e.parameter.p || "1234";
+        const loginRes = loginUser(u, p);
+        const dashData = getDashboardData(loginRes.sessionToken);
+        jsonResult = { success: true, user: loginRes.username, role: loginRes.role, dashboard: dashData };
+      } catch (dErr) {
+        jsonResult = { success: false, error: dErr.message };
+      }
     } else if (api === "initStudents") {
       try {
         const ss = getSpreadsheet();
@@ -503,6 +568,56 @@ function doGet(e) {
         initializeAdminUser(newSs);
         initializeStudentRosterTemplate(newSs);
         jsonResult = { success: true, message: "สร้าง Master Spreadsheet สำเร็จ", id: newId, name: newSs.getName() };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "authorize") {
+      try {
+        jsonResult = importAuthorize();
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "setupPhotoConfig") {
+      try {
+        jsonResult = { success: true, config: setupPhotoConfig() };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "importStatus") {
+      try {
+        jsonResult = importStatus();
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "importInspect") {
+      try {
+        jsonResult = { success: true, sources: importInspectSources() };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "importStep") {
+      try {
+        jsonResult = importStep(e.parameter.step, e.parameter.key);
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "importAll") {
+      try {
+        assertImportKey_(e.parameter.key);
+        jsonResult = importAllFromDrive({
+          skipPhotos: e.parameter.photos === "false",
+          skipCertificates: e.parameter.certs === "false",
+          skipVaccines: e.parameter.vaccines === "false",
+          skipMonthly: e.parameter.monthly === "false"
+        });
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
+    } else if (api === "reorganizeDrive") {
+      try {
+        jsonResult = e.parameter.apply === "true"
+          ? reorganizeDriveApply(e.parameter.key)
+          : reorganizeDriveForImport(false);
       } catch (err) {
         jsonResult = { success: false, error: err.message };
       }
@@ -865,6 +980,40 @@ function doPost(e) {
         totalStudents: recSheet.getLastRow() - 1,
         totalVisits: visitSheet.getLastRow() - 1
       })).setMimeType(ContentService.MimeType.JSON);
+    } else if (action === "updateSettings") {
+      const settingsMap = postData.settings || {};
+      let sSheet = ss.getSheetByName("Settings");
+      if (!sSheet) {
+        initializeSheets(ss);
+        initializeDefaultSettings(ss);
+        sSheet = ss.getSheetByName("Settings");
+      }
+      const sData = sSheet.getDataRange().getValues();
+      const timestamp = new Date();
+      const updatedKeys = [];
+      for (let k in settingsMap) {
+        const val = String(settingsMap[k]).trim();
+        let found = false;
+        for (let i = 1; i < sData.length; i++) {
+          if (sData[i][0] === k) {
+            sSheet.getRange(i + 1, 2).setValue(val);
+            sSheet.getRange(i + 1, 4).setValue(timestamp);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          sSheet.appendRow([k, val, "ตั้งค่าเพิ่มเติม", timestamp, "admin"]);
+        }
+        try {
+          PropertiesService.getScriptProperties().setProperty(k, val);
+        } catch (propErr) {}
+        updatedKeys.push(k);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ success: true, updated: updatedKeys })).setMimeType(ContentService.MimeType.JSON);
+    } else if (action === "importStudentDocuments") {
+      const res = importStudentDocumentsBatch(postData.items || [], postData.key);
+      return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
     }
 
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: "Unknown action: " + action })).setMimeType(ContentService.MimeType.JSON);
@@ -950,6 +1099,10 @@ function initializeSheets(ss) {
       "FollowedUpBy", "IsDemo"
     ],
     "Attachments": ["AttachmentID", "VisitID", "RecipientID", "FileName", "FileUrl", "UploadedBy", "UploadedAt", "IsDemo"],
+    "StudentDocuments": [
+      "DocumentID", "StudentCode", "RecipientID", "RecipientName", "DocType",
+      "FileName", "FileUrl", "SourceFolder", "SourceKey", "RecordedAt"
+    ],
     "Settings": ["SettingKey", "SettingValue", "Description", "UpdatedAt", "UpdatedBy"],
     "AuditLogs": ["LogID", "Timestamp", "Username", "Role", "ActionType", "ActionDetails", "IpAddress"]
   };
@@ -2084,34 +2237,175 @@ function getServiceRecipientById(sessionToken, id) {
   if (!recipient) {
     throw new Error("ไม่พบข้อมูลผู้รับบริการรายนี้");
   }
-  
-  // ดึงประวัติเวชระเบียนการเข้ารับบริการ
+
+  // ใช้ RecipientID เป็นหลัก และ fallback ด้วยรหัส นพอ. 7 หลัก
+  const recipientId = String(recipient.RecipientID || "").trim();
+  const studentCode = String(recipient.NumberOrOrder || "").replace(/\D/g, "");
+  const matchesRecipient = (rid, code) => {
+    const r = String(rid || "").trim();
+    const c = String(code || "").replace(/\D/g, "");
+    return (recipientId && r === recipientId) || (studentCode && c === studentCode);
+  };
+
+  // ---------------------------------------------------------------------
+  // 1) ประวัติการเข้ารับบริการ + การประเมิน/การรักษา/การจ่ายยา
+  // ---------------------------------------------------------------------
   const visitsSheet = ss.getSheetByName("Visits");
-  const visitsData = visitsSheet.getLastRow() > 1 ? visitsSheet.getDataRange().getValues() : [];
+  const visitsData = visitsSheet && visitsSheet.getLastRow() > 1 ? visitsSheet.getDataRange().getValues() : [];
   const visitsHeaders = visitsData[0] || [];
   const visits = [];
-  
+
+  const assessmentsByVisit = buildChildRowsByVisit_(ss, "Assessments");
+  const treatmentsByVisit = buildChildRowsByVisit_(ss, "Treatments");
+  const dispensingByVisit = buildChildRowsByVisit_(ss, "Dispensing");
+
   const vRecIdIdx = visitsHeaders.indexOf("RecipientID");
   const vIsDemoIdx = visitsHeaders.indexOf("IsDemo");
-  
+  const vVisitIdIdx = visitsHeaders.indexOf("VisitID");
+  const vNameIdx = visitsHeaders.indexOf("RecipientName");
+  const vGroupIdx = visitsHeaders.indexOf("Group");
+  const nameParts = {
+    title: String(recipient.Title || "").replace(/\s+/g, " ").trim(),
+    first: String(recipient.FirstName || "").replace(/\s+/g, " ").trim(),
+    last: String(recipient.LastName || "").replace(/\s+/g, " ").trim()
+  };
+  // รองรับทั้ง "ชื่อ นามสกุล" และรูปแบบที่นำเข้าโดยมีคำนำหน้าไม่เว้นวรรค
+  const nameVariants = {};
+  [
+    `${nameParts.first} ${nameParts.last}`,
+    `${nameParts.title}${nameParts.first} ${nameParts.last}`,
+    `${nameParts.title} ${nameParts.first} ${nameParts.last}`
+  ].forEach(n => {
+    const v = n.replace(/\s+/g, " ").trim();
+    if (v) nameVariants[v] = true;
+  });
+  const sameName = (name) => {
+    const n = String(name || "").replace(/\s+/g, " ").trim();
+    return !!n && !!nameVariants[n];
+  };
+
   for (let i = 1; i < visitsData.length; i++) {
-    if (visitsData[i][vRecIdIdx] === id) {
-      const visitIsDemo = visitsData[i][vIsDemoIdx] === true || visitsData[i][vIsDemoIdx] === "TRUE" || String(visitsData[i][vIsDemoIdx]).toUpperCase() === 'TRUE';
-      if (isDemo === visitIsDemo) {
-        const visitItem = {};
-        visitsHeaders.forEach((vh, idx) => {
-          visitItem[vh] = visitsData[i][idx];
-        });
-        visits.push(visitItem);
-      }
-    }
+    const rowRecId = visitsData[i][vRecIdIdx];
+    const byId = matchesRecipient(rowRecId, "");
+    // กรณีข้อมูลเก่าที่ไม่มี RecipientID แต่ชื่อและกลุ่มชั้นปีตรงกับเจ้าของแฟ้ม
+    const visitGroup = vGroupIdx >= 0 ? String(visitsData[i][vGroupIdx] || "").trim() : "";
+    const ownGroup = String(recipient.Group || "").trim();
+    const groupOk = !visitGroup || !ownGroup || visitGroup === ownGroup;
+    const byName = !String(rowRecId || "").trim() && groupOk && sameName(vNameIdx >= 0 ? visitsData[i][vNameIdx] : "");
+    if (!byId && !byName) continue;
+
+    const visitIsDemo = visitsData[i][vIsDemoIdx] === true || visitsData[i][vIsDemoIdx] === "TRUE" || String(visitsData[i][vIsDemoIdx]).toUpperCase() === 'TRUE';
+    if (isDemo !== visitIsDemo) continue;
+
+    const visitItem = {};
+    visitsHeaders.forEach((vh, idx) => {
+      visitItem[vh] = visitsData[i][idx];
+    });
+
+    const visitId = String(visitsData[i][vVisitIdIdx] || "").trim();
+    const assess = (assessmentsByVisit[visitId] || [])[0] || null;
+    const treat = (treatmentsByVisit[visitId] || [])[0] || null;
+    const meds = dispensingByVisit[visitId] || [];
+
+    visitItem.AssessmentDetails = assess ? assess.AssessmentDetails : "";
+    visitItem.Diagnosis = assess ? assess.Diagnosis : (visitItem.InitialAssessment || "");
+    visitItem.TreatmentDetails = treat ? treat.TreatmentDetails : (visitItem.Outcome || "");
+    visitItem.TreatmentNote = treat ? treat.Note : "";
+    visitItem.Medicines = meds.map(m => ({
+      MedicineName: m.MedicineName,
+      Quantity: m.Quantity,
+      Directions: m.Directions
+    }));
+
+    visits.push(visitItem);
   }
-  
-  // เรียงลำดับจากล่าสุุดไปหาเก่าสุด
+
+  // เรียงลำดับจากล่าสุดไปหาเก่าสุด
   visits.sort((a, b) => new Date(b.VisitDate).getTime() - new Date(a.VisitDate).getTime());
   recipient.visits = visits;
-  
+
+  // ---------------------------------------------------------------------
+  // 2) วัคซีน / ใบรับรองแพทย์ / เอกสารแนบ
+  // ---------------------------------------------------------------------
+  recipient.vaccinations = readRecipientRecords_(ss, "Vaccinations", matchesRecipient, "VaccinationDate");
+  recipient.certificates = readRecipientRecords_(ss, "Certificates", matchesRecipient, "IssueDate");
+  recipient.documents = readRecipientRecords_(ss, "Attachments", matchesRecipient, "UploadedAt");
+  recipient.studentDocuments = readRecipientRecords_(ss, "StudentDocuments", matchesRecipient, "RecordedAt");
+
+  // ---------------------------------------------------------------------
+  // 3) สรุปจำนวนแยกประเภท สำหรับการ์ดภาพรวมของแฟ้มประวัติ
+  // ---------------------------------------------------------------------
+  const yearsSet = {};
+  visits.forEach(v => {
+    const d = new Date(v.VisitDate);
+    if (!isNaN(d.getTime())) yearsSet[d.getFullYear() + 543] = true;
+  });
+  recipient.summary = {
+    totalVisits: visits.length,
+    totalVaccinations: recipient.vaccinations.length,
+    totalCertificates: recipient.certificates.length,
+    totalDocuments: recipient.documents.length + recipient.studentDocuments.length,
+    lastVisitDate: visits.length ? visits[0].VisitDate : "",
+    firstVisitDate: visits.length ? visits[visits.length - 1].VisitDate : "",
+    academicYears: Object.keys(yearsSet).sort((a, b) => b - a)
+  };
+
   return recipient;
+}
+
+/**
+ * รวมแถวตารางลูก (Assessments/Treatments/Dispensing) เป็น map ตาม VisitID
+ * ใช้ครั้งเดียวต่อการเปิดแฟ้มประวัติ เพื่อลดการอ่านชีตซ้ำต่อรายการ
+ */
+function buildChildRowsByVisit_(ss, sheetName) {
+  const map = {};
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return map;
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const visitIdx = headers.indexOf("VisitID");
+  if (visitIdx === -1) return map;
+
+  for (let i = 1; i < data.length; i++) {
+    const visitId = String(data[i][visitIdx] || "").trim();
+    if (!visitId) continue;
+    const item = {};
+    headers.forEach((h, idx) => { item[h] = data[i][idx]; });
+    if (!map[visitId]) map[visitId] = [];
+    map[visitId].push(item);
+  }
+  return map;
+}
+
+/**
+ * อ่านแถวของตารางที่ผูกกับผู้รับบริการ (RecipientID) หรือรหัส นพอ. (StudentCode)
+ * แล้วเรียงจากวันที่ล่าสุดไปเก่าสุด
+ */
+function readRecipientRecords_(ss, sheetName, matchesRecipient, dateField) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const recIdx = headers.indexOf("RecipientID");
+  const codeIdx = headers.indexOf("StudentCode");
+  const dateIdx = headers.indexOf(dateField);
+
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const rid = recIdx >= 0 ? data[i][recIdx] : "";
+    const code = codeIdx >= 0 ? data[i][codeIdx] : "";
+    if (!matchesRecipient(rid, code)) continue;
+    const item = {};
+    headers.forEach((h, idx) => { item[h] = data[i][idx]; });
+    rows.push(item);
+  }
+
+  if (dateIdx >= 0) {
+    rows.sort((a, b) => new Date(b[dateField]).getTime() - new Date(a[dateField]).getTime());
+  }
+  return rows;
 }
 
 /**
@@ -4432,10 +4726,12 @@ function clearRealRows(sheet, isDemoColumnName) {
  * ส่งข้อความแจ้งเตือนเข้าห้อง Telegram
  */
 function sendTelegramNotification(message) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const botToken = getBackendConfig("TELEGRAM_BOT_TOKEN") || TELEGRAM_BOT_TOKEN;
+  const chatId = getBackendConfig("TELEGRAM_CHAT_ID") || TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) return { ok: false, error: "ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID" };
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const payload = {
-    "chat_id": TELEGRAM_CHAT_ID,
+    "chat_id": chatId,
     "text": message,
     "parse_mode": "HTML"
   };
@@ -4450,6 +4746,34 @@ function sendTelegramNotification(message) {
     return JSON.parse(response.getContentText());
   } catch (e) {
     Logger.log("Error sending Telegram message: " + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * ส่งข้อความแจ้งเตือนผ่าน LINE Messaging API
+ */
+function sendLineNotification(message, targetUserId) {
+  const token = getBackendConfig("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN");
+  if (!token) return { ok: false, error: "ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN" };
+  const url = targetUserId ? "https://api.line.me/v2/bot/message/push" : "https://api.line.me/v2/bot/message/broadcast";
+  const payload = targetUserId ? {
+    to: targetUserId,
+    messages: [{ type: "text", text: message }]
+  } : {
+    messages: [{ type: "text", text: message }]
+  };
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      method: "post",
+      headers: { "Authorization": "Bearer " + token },
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    return JSON.parse(response.getContentText());
+  } catch (e) {
+    Logger.log("Error sending LINE message: " + e.message);
     return { ok: false, error: e.message };
   }
 }

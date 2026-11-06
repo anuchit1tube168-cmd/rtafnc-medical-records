@@ -1224,6 +1224,40 @@
         <!-- แถบประวัติแพ้ยา คัดกรองเตือนเด่นชัด -->
         <div id="profileAlertsBox"></div>
 
+        <!-- รูปประจำตัว นพอ. จากทะเบียนรูปกลาง (Student Photo Master) -->
+        <div class="profile-photo-strip">
+          <div class="profile-photo-box">
+            <img id="profPhotoImg" alt="รูปนักเรียนพยาบาล" style="display:none;">
+            <div id="profPhotoPlaceholder" class="profile-photo-placeholder"><i class="fas fa-user"></i></div>
+          </div>
+          <div class="profile-photo-detail">
+            <div class="profile-photo-role" id="profPhotoRole">-</div>
+            <div class="profile-photo-status" id="profPhotoStatus">กำลังตรวจสอบรูปประจำตัว...</div>
+            <div class="profile-photo-hint">จับคู่ด้วยรหัส นพอ. 7 หลักเท่านั้น (Student Photo Master 2569)</div>
+          </div>
+        </div>
+
+        <!-- สรุปแฟ้มประวัติรายคน แยกประเภท -->
+        <div class="profile-summary-chips" id="profSummaryChips"></div>
+        <div class="profile-tabs" id="profileTabs">
+          <button type="button" class="profile-tab active" data-tab="overview" onclick="showProfileTab('overview')">
+            <i class="fas fa-id-card"></i> ภาพรวม
+          </button>
+          <button type="button" class="profile-tab" data-tab="visits" onclick="showProfileTab('visits')">
+            <i class="fas fa-stethoscope"></i> การเจ็บป่วย <span class="profile-tab-count" id="profTabVisitCount">0</span>
+          </button>
+          <button type="button" class="profile-tab" data-tab="vaccines" onclick="showProfileTab('vaccines')">
+            <i class="fas fa-syringe"></i> วัคซีน <span class="profile-tab-count" id="profTabVaccineCount">0</span>
+          </button>
+          <button type="button" class="profile-tab" data-tab="certs" onclick="showProfileTab('certs')">
+            <i class="fas fa-file-medical-alt"></i> ใบรับรองแพทย์ <span class="profile-tab-count" id="profTabCertCount">0</span>
+          </button>
+          <button type="button" class="profile-tab" data-tab="docs" onclick="showProfileTab('docs')">
+            <i class="fas fa-folder-open"></i> เอกสารแนบ <span class="profile-tab-count" id="profTabDocCount">0</span>
+          </button>
+        </div>
+
+        <div class="profile-tab-pane active" id="profTab-overview">
         <div class="row">
           <div class="col-md-7">
             <h5 class="section-title mb-2">ข้อมูลประวัติบุคคล</h5>
@@ -1256,9 +1290,11 @@
           <div class="col-md-4"><strong>โรงพยาบาล/ข้อจำกัด:</strong> <span id="profConstraint">-</span></div>
           <div class="col-12 mt-1"><strong>หมายเหตุเสริม:</strong> <span id="profNote">-</span></div>
         </div>
+        </div><!-- /profTab-overview -->
 
         <!-- ประวัติการเข้ารับบริการของคนไข้สะสม -->
-        <h5 class="section-title mt-4 mb-2">ประวัติการเข้ารับบริการห้องรักษาพยาบาล</h5>
+        <div class="profile-tab-pane" id="profTab-visits">
+        <h5 class="section-title mb-2">ประวัติการเข้ารับบริการและผลการรักษา</h5>
         <div class="table-responsive">
           <table class="table-custom" style="font-size:0.85rem;">
             <thead>
@@ -1266,19 +1302,75 @@
                 <th>เลขประวัติ</th>
                 <th>วันที่ - เวลาเข้า</th>
                 <th>อาการสำคัญ</th>
-                <th>ผลหลังการดูแล</th>
+                <th>การวินิจฉัย / การรักษา</th>
+                <th>สถานที่ / ผลดูแล</th>
                 <th>ผู้บันทึกการดูแล</th>
                 <th>เปิดดูใบงาน</th>
               </tr>
             </thead>
             <tbody id="profileVisitsTableBody">
-              <tr><td colspan="6" class="text-center">กำลังโหลดประวัติ...</td></tr>
+              <tr><td colspan="7" class="text-center">กำลังโหลดประวัติ...</td></tr>
             </tbody>
           </table>
+        </div>
+        </div><!-- /profTab-visits -->
+
+        <!-- วัคซีน -->
+        <div class="profile-tab-pane" id="profTab-vaccines">
+          <h5 class="section-title mb-2">ประวัติการได้รับวัคซีน</h5>
+          <div class="table-responsive">
+            <table class="table-custom" style="font-size:0.85rem;">
+              <thead>
+                <tr>
+                  <th>วันที่</th>
+                  <th>วัคซีน</th>
+                  <th>เข็ม/ขนาด</th>
+                  <th>ช่องทาง/ตำแหน่ง</th>
+                  <th>Lot</th>
+                  <th>ผู้ฉีด/ผู้ควบคุม</th>
+                </tr>
+              </thead>
+              <tbody id="profileVaccinesTableBody">
+                <tr><td colspan="6" class="text-center">กำลังโหลดข้อมูล...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ใบรับรองแพทย์ -->
+        <div class="profile-tab-pane" id="profTab-certs">
+          <h5 class="section-title mb-2">ใบรับรองแพทย์ / เอกสารรับรองการรักษา</h5>
+          <div class="table-responsive">
+            <table class="table-custom" style="font-size:0.85rem;">
+              <thead>
+                <tr>
+                  <th>วันที่ออก</th>
+                  <th>โรงพยาบาล</th>
+                  <th>การวินิจฉัย</th>
+                  <th>แพทย์ผู้รับรอง</th>
+                  <th>หมายเหตุ</th>
+                  <th>ไฟล์</th>
+                </tr>
+              </thead>
+              <tbody id="profileCertsTableBody">
+                <tr><td colspan="6" class="text-center">กำลังโหลดข้อมูล...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- เอกสารแนบ -->
+        <div class="profile-tab-pane" id="profTab-docs">
+          <h5 class="section-title mb-2">เอกสารแนบและเอกสารประวัติส่วนตัว</h5>
+          <p class="text-muted" style="font-size:0.85rem;">เอกสารประวัติส่วนตัวจาก Smart database ปีการศึกษา 2567/2568 — จับคู่ด้วยรหัส นพอ. 7 หลักเท่านั้น</p>
+          <div id="profileDocsList" class="profile-docs-list">
+            <div class="text-muted">ยังไม่มีเอกสารแนบ</div>
+          </div>
         </div>
 
       </div>
       <div class="modal-footer">
+        <button class="btn btn-outline" onclick="printProfileFile()"><i class="fas fa-print"></i> พิมพ์แฟ้มประวัติ</button>
         <button class="btn btn-secondary" onclick="closeModal('profileModal')">ปิดหน้าต่าง</button>
       </div>
     </div>

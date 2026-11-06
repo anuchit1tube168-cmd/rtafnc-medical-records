@@ -92,7 +92,8 @@ test('generated bundle drops legacy admin password bypass and sample seeding', (
   const code = fs.readFileSync('dist/google/Backend.gs','utf8');
   assert.equal(/admin1234|password === "1234"/.test(code), false);
   assert.equal(code.includes('function ensureSampleStudentsExist() { return; }'), true);
-  assert.equal(/REVIEW|ศุภัสสรา/.test(code), false);
+  // "REVIEW" ปรากฏได้ในสถานะรูป (PHOTO_REVIEW_REQUIRED) จึงตรวจเฉพาะข้อมูลตัวอย่างจริง
+  assert.equal(/ศุภัสสรา|REC-67003/.test(code), false);
 });
 
 test('Workers exposes health, LIFF config, and validates notification endpoints', async () => {

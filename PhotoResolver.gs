@@ -14,13 +14,13 @@ function getPhotoModuleConfig_() {
   return {
     enabled: String(getBackendConfig('PHOTO_MODULE_ENABLED', 'TRUE')).toUpperCase() !== 'FALSE',
     academicYear: String(getBackendConfig('PHOTO_ACADEMIC_YEAR', '2569')),
-    masterSpreadsheetId: getBackendConfig('PHOTO_MASTER_SPREADSHEET_ID', ''),
-    masterFolderId: getBackendConfig('PHOTO_MASTER_FOLDER_ID', ''),
+    masterSpreadsheetId: getBackendConfig('PHOTO_MASTER_SPREADSHEET_ID', '1G3Nezl0Ye2gKVBx9t87yB9EcKeDR8LrYDlLFXfzA-Ik'),
+    masterFolderId: getBackendConfig('PHOTO_MASTER_FOLDER_ID', '1HPCQo2AzpFeEu7jhwaf_FwohfY6oLXN7'),
     folderByPrefix: {
-      '69': getBackendConfig('PHOTO_FOLDER_YEAR1_ID', ''),
-      '68': getBackendConfig('PHOTO_FOLDER_YEAR2_ID', ''),
-      '67': getBackendConfig('PHOTO_FOLDER_YEAR3_ID', ''),
-      '66': getBackendConfig('PHOTO_FOLDER_YEAR4_ID', '')
+      '69': getBackendConfig('PHOTO_FOLDER_YEAR1_ID', '11-YKNa4GQR_tdSbHMCm7dR0-1iFoQbjR'),
+      '68': getBackendConfig('PHOTO_FOLDER_YEAR2_ID', '1d9PRDZ3rVKt4gb-thT2PAVB0u-5YHu_b'),
+      '67': getBackendConfig('PHOTO_FOLDER_YEAR3_ID', '1STOFoDot7JZcF0V5HyPVbcFoBCFbCK1l'),
+      '66': getBackendConfig('PHOTO_FOLDER_YEAR4_ID', '1PIPLY5GFTvalesWlo-o84VxMwZJrz1l1')
     },
     classYearByPrefix: {
       '69': 1,

@@ -2048,4 +2048,237 @@ body {
   justify-content: center;
 }
 
+/* --- รูปประจำตัวในแฟ้มประวัติ --- */
+.profile-photo-strip {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%);
+}
+
+.profile-photo-box {
+  width: 96px;
+  height: 96px;
+  min-width: 96px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #dbeafe;
+  border: 2px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.profile-photo-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-photo-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.1rem;
+  color: #60a5fa;
+}
+
+.profile-photo-detail {
+  min-width: 0;
+}
+
+.profile-photo-role {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.profile-photo-status {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.profile-photo-status.ok { color: #15803d; }
+.profile-photo-status.warn { color: #b45309; }
+.profile-photo-status.err { color: #b91c1c; }
+
+.profile-photo-hint {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 6px;
+}
+
+.badge-photo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.7rem;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+@media (max-width: 576px) {
+  .profile-photo-box { width: 72px; height: 72px; min-width: 72px; }
+  .profile-photo-role { font-size: 0.9rem; }
+}
+
+/* --- แฟ้มประวัติสุขภาพรายคน: สรุป + แท็บแยกประเภท --- */
+.profile-summary-chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.profile-summary-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.profile-summary-chip:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  transform: translateY(-1px);
+}
+
+.profile-summary-chip i {
+  color: #2563eb;
+  font-size: 0.9rem;
+}
+
+.profile-summary-chip .chip-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.profile-summary-chip .chip-label {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.profile-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 14px;
+}
+
+.profile-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-tab:hover { color: #1d4ed8; }
+
+.profile-tab.active {
+  color: #1d4ed8;
+  border-bottom-color: #2563eb;
+}
+
+.profile-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.profile-tab.active .profile-tab-count {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.profile-tab-pane { display: none; }
+.profile-tab-pane.active { display: block; }
+
+.profile-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-doc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.profile-doc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.profile-doc-meta { min-width: 0; flex: 1; }
+
+.profile-doc-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.profile-doc-sub {
+  font-size: 0.74rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+@media (max-width: 576px) {
+  .profile-summary-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .profile-tab { padding: 7px 9px; font-size: 0.8rem; }
+}
+
 </style>

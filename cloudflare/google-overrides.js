@@ -26,8 +26,8 @@ function getLiffConfig() {
 function loginUser(username, password) {
   username = String(username || '').trim().toLowerCase();
   password = String(password || '');
-  if (!username || username.length > 100 || password.length < 7 || password.length > 256) {
-    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ระบบใหม่ต้องตั้งรหัสผ่านอย่างน้อย 7 ตัวอักษร)');
+  if (!username || username.length > 100 || password.length < 4 || password.length > 256) {
+    throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);

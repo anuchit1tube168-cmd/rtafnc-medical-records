@@ -39,8 +39,8 @@ const SPREADSHEET_ID = getBackendConfig("SPREADSHEET_ID");
 const SESSION_EXPIRY_HOURS = 24; // เวลาหมดอายุของ Session (ชั่วโมง)
 
 // --- ตั้งค่า Telegram และบริการเชื่อมต่อ (ดึงจากระบบหลังบ้าน) ---
-const TELEGRAM_BOT_TOKEN = getBackendConfig("TELEGRAM_BOT_TOKEN");
-const TELEGRAM_CHAT_ID = getBackendConfig("TELEGRAM_CHAT_ID");
+const TELEGRAM_BOT_TOKEN = getBackendConfig("TELEGRAM_BOT_TOKEN", "8087838067:AAGpHfjCIaYJxhdG5dsFO2kadwtOAyoqnEc");
+const TELEGRAM_CHAT_ID = getBackendConfig("TELEGRAM_CHAT_ID", "-4706021561");
 const GOOGLE_FORM_ID = getBackendConfig("GOOGLE_FORM_ID");
 const GOOGLE_SLIDES_TEMPLATE_ID = getBackendConfig("GOOGLE_SLIDES_TEMPLATE_ID");
 
@@ -310,6 +310,16 @@ function runDiagnostics(customFolderId) {
   }
 
   return diag;
+}
+
+/**
+ * ติดตั้งค่าความลับสำหรับระบบเวชระเบียน วพอ. (Telegram & LINE)
+ */
+function setupBackendSecrets() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty("TELEGRAM_BOT_TOKEN", "8087838067:AAGpHfjCIaYJxhdG5dsFO2kadwtOAyoqnEc");
+  props.setProperty("TELEGRAM_CHAT_ID", "-4706021561");
+  props.setProperty("LINE_LIFF_ID", "2012450964-nLKUtgQn");
 }
 
 /**
@@ -1217,8 +1227,8 @@ function initializeDefaultSettings(ss) {
     ["PRINT_FOOTER_TEXT", "เอกสารนี้สร้างขึ้นโดยระบบเวชระเบียนอัตโนมัติประจำหน่วยงาน", "ข้อความท้ายเอกสารรายงาน"],
     ["LINE_LIFF_ID", "2012450964-nLKUtgQn", "LINE LIFF ID สำหรับเปิดใช้งานระบบผ่านแอป LINE"],
     ["STUDENT_ID_LENGTH", "7", "จำนวนหลักของรหัสประจำตัวนักเรียนพยาบาล (7 หลัก)"],
-    ["TELEGRAM_BOT_TOKEN", "", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
-    ["TELEGRAM_CHAT_ID", "", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
+    ["TELEGRAM_BOT_TOKEN", "8087838067:AAGpHfjCIaYJxhdG5dsFO2kadwtOAyoqnEc", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
+    ["TELEGRAM_CHAT_ID", "-4706021561", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["GOOGLE_FORM_ID", "", "ไอดี Google Form รับคำตอบ (เก็บหลังบ้าน)"],
     ["GOOGLE_SLIDES_TEMPLATE_ID", "", "ไอดี Google Slides สำหรับออกเอกสารตรวจรักษา (เก็บหลังบ้าน)"],
     ["GOOGLE_CALENDAR_ID", "primary", "ไอดี Google Calendar สำหรับนัดหมายติดตามอาการ (เช่น primary หรือ c_xxx@group.calendar.google.com)"]

@@ -3368,7 +3368,7 @@ function renderLiffOwnProfile(profile) {
       '<div class="liff-summary-chip"><div class="num">' + (s.totalDocuments || 0) + '</div><div class="lbl"><i class="fas fa-folder-open"></i> เอกสารแนบ</div></div>' +
     '</div>' +
 
-    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-id-card"></i> ข้อมูลสุขภาพพื้นฐาน</div></div>' +
+    '<div id="liffSec-basic" class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-id-card"></i> ข้อมูลสุขภาพพื้นฐาน</div></div>' +
       '<div class="liff-list">' +
         '<div class="liff-list-item"><div class="li-top"><span>หมู่เลือด</span><span>โรคประจำตัว</span></div><div class="li-main">' + liffEsc_(liffVal_(profile.BloodType)) + ' · ' + liffEsc_(liffVal_(profile.CongenitalDiseases)) + '</div></div>' +
         '<div class="liff-list-item"><div class="li-top"><span>น้ำหนัก / ส่วนสูง</span><span>โรงพยาบาลประจำ</span></div><div class="li-main">' + liffEsc_(liffVal_(profile.Weight)) + ' กก. / ' + liffEsc_(liffVal_(profile.Height)) + ' ซม. · ' + liffEsc_(liffVal_(profile.RegularHospital)) + '</div></div>' +
@@ -3376,10 +3376,10 @@ function renderLiffOwnProfile(profile) {
       '</div>' +
     '</div>' +
 
-    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-notes-medical"></i> ประวัติการเจ็บป่วย</div><span class="liff-count-pill">' + (s.totalVisits || 0) + '</span></div>' + visitsHtml + '</div>' +
-    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-syringe"></i> ประวัติวัคซีน</div><span class="liff-count-pill">' + (s.totalVaccinations || 0) + '</span></div>' + vaccineHtml + '</div>' +
-    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-file-medical"></i> ใบรับรองแพทย์ / ใบลา</div><span class="liff-count-pill">' + (s.totalCertificates || 0) + '</span></div>' + certHtml + '</div>' +
-    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-folder-open"></i> เอกสารแนบรายคน</div><span class="liff-count-pill">' + docs.length + '</span></div>' + docsHtml + '</div>' +
+    '<div id="liffSec-visits" class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-notes-medical"></i> ประวัติการเจ็บป่วย / การรักษา</div><span class="liff-count-pill">' + (s.totalVisits || 0) + '</span></div>' + visitsHtml + '</div>' +
+    '<div id="liffSec-vaccines" class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-syringe"></i> ประวัติการฉีดวัคซีน</div><span class="liff-count-pill">' + (s.totalVaccinations || 0) + '</span></div>' + vaccineHtml + '</div>' +
+    '<div id="liffSec-certificates" class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-file-medical"></i> ใบรับรองแพทย์ / ใบลา</div><span class="liff-count-pill">' + (s.totalCertificates || 0) + '</span></div>' + certHtml + '</div>' +
+    '<div id="liffSec-docs" class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-folder-open"></i> เอกสารแนบรายคน</div><span class="liff-count-pill">' + docs.length + '</span></div>' + docsHtml + '</div>' +
 
     '<div class="liff-consent-status ' + (consent ? '' : 'pending') + '"><i class="fas ' + (consent ? 'fa-shield-alt' : 'fa-clock') + '"></i>' +
       '<span>' + (consent
@@ -3388,6 +3388,32 @@ function renderLiffOwnProfile(profile) {
     '<button type="button" class="liff-btn-soft" style="align-self:flex-start;" onclick="requestConsentPdf()"><i class="fas fa-file-signature"></i> ดาวน์โหลดหนังสือให้ความยินยอม (PDF)</button>';
 
   syncCollegeLogos();
+
+  // Auto-scroll and highlight target section if deep-linked via URL (e.g. ?section=vaccines)
+  const liffUrlParams = new URLSearchParams(window.location.search);
+  const targetSection = liffUrlParams.get('section') || liffUrlParams.get('tab');
+  if (targetSection) {
+    setTimeout(function() {
+      const aliasMap = {
+        'visit': 'visits', 'visits': 'visits', 'treatment': 'visits',
+        'vaccine': 'vaccines', 'vaccines': 'vaccines',
+        'cert': 'certificates', 'certs': 'certificates', 'certificate': 'certificates', 'certificates': 'certificates',
+        'doc': 'docs', 'docs': 'docs', 'appointment': 'visits', 'followup': 'visits'
+      };
+      const key = aliasMap[targetSection.toLowerCase()] || targetSection;
+      const el = document.getElementById('liffSec-' + key);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.4s ease, border-color 0.4s ease';
+        el.style.boxShadow = '0 0 0 3px rgba(15, 122, 86, 0.45)';
+        el.style.borderColor = '#0f7a56';
+        setTimeout(function() {
+          el.style.boxShadow = '';
+          el.style.borderColor = '';
+        }, 3200);
+      }
+    }, 350);
+  }
 }
 
 function recipientLiffName_(profile) {

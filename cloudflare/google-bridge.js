@@ -3,6 +3,16 @@ function doGet() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// One-time helper for the deploying user: open this project in the Apps Script
+// editor and run this function once to grant the Documents scope used for PDFs.
+function authorizePdfAccess() {
+  const doc = DocumentApp.create('RTAFNC PDF authorization check ' + Date.now());
+  doc.getBody().appendParagraph('PDF authorization OK');
+  doc.saveAndClose();
+  try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (error) {}
+  return 'PDF authorization OK';
+}
+
 function config_(key) {
   const props = PropertiesService.getScriptProperties().getProperty(key);
   if (props) return props;
@@ -24,7 +34,8 @@ function lineBinding_(lineUserId) {
     const sheet = getSpreadsheet().getSheetByName('LineBindings');
     if (sheet && sheet.getLastRow() > 1) {
       const rows = sheet.getDataRange().getValues().slice(1);
-      const hit = rows.find(row => String(row[0]).trim() === lineUserId);
+      const hit = rows.find(row => String(row[0]).trim() === lineUserId &&
+        String(row[4] || 'APPROVED').toUpperCase() === 'APPROVED');
       if (hit && hit[1]) return String(hit[1]).trim();
     }
   } catch (error) {
@@ -68,11 +79,37 @@ function verifyStudent_(input) {
   if (response.getResponseCode() !== 200) throw new Error('ตัวตน LINE ไม่ถูกต้องหรือหมดอายุ');
   const identity = JSON.parse(response.getContentText());
   if (!identity.sub || identity.aud !== channel || identity.iss !== 'https://access.line.me' || identity.exp * 1000 <= Date.now()) throw new Error('ตัวตน LINE ไม่ถูกต้อง');
-  // Binding is created by an administrator; never trust a student ID claimed by the browser.
+
+  // The student ID always comes from the verified LINE identity, never from the browser.
   const studentId = lineBinding_(identity.sub);
+
+  if (input.method === 'getLiffBindingStatus') {
+    input.args = [identity.sub, identity.name || '', identity.picture || '', studentId || ''];
+    return;
+  }
+  if (input.method === 'bindLiffStudent') {
+    input.args[0] = Object.assign({}, input.args[0] || {}, {
+      lineUserId: identity.sub, lineDisplayName: identity.name || '', pictureUrl: identity.picture || ''
+    });
+    return;
+  }
+  if (!studentId) throw new Error('บัญชี LINE ยังไม่ผูกกับรหัสนักเรียน กรุณาผูกบัญชีก่อนใช้งาน');
+  if (input.method === 'getMyLiffProfile' || input.method === 'requestStudentPdf' || input.method === 'requestStudentConsentPdf') {
+    input.args = [studentId];
+    return;
+  }
+  if (input.method === 'submitLiffConsent') {
+    input.args[0] = Object.assign({}, input.args[0] || {}, {
+      studentCode: studentId, lineUserId: identity.sub, lineDisplayName: identity.name || ''
+    });
+    return;
+  }
   const requested = input.method === 'lookupStudentByStudentId' ? input.args[0] : input.args[0] && input.args[0].studentId;
-  if (!studentId || String(requested) !== studentId) throw new Error('บัญชี LINE ยังไม่ผูกกับรหัสนักเรียนนี้ กรุณาติดต่อเจ้าหน้าที่');
-  if (input.method === 'submitLiffSelfCheckin') input.args[0].lineDisplayName = identity.name || '';
+  if (String(requested) !== studentId) throw new Error('บัญชี LINE ยังผูกกับรหัสนักเรียนอื่น ไม่สามารถเข้าถึงข้อมูลนี้ได้');
+  if (input.method === 'submitLiffSelfCheckin') {
+    input.args[0].lineDisplayName = identity.name || '';
+    input.args[0].lineUserId = identity.sub;
+  }
 }
 
 function doPost(e) {

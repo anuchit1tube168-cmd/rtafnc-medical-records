@@ -1177,6 +1177,55 @@ function renderProfileCertificates(list) {
   }).join('');
 }
 
+function selectedProfileId_() {
+  const r = appState.selectedRecipient || {};
+  return r.RecipientID || r.NumberOrOrder || '';
+}
+
+/** สร้างและดาวน์โหลด PDF แฟ้มประวัติสุขภาพรายคนจากเซิร์ฟเวอร์ */
+function downloadProfilePdf() {
+  const id = selectedProfileId_();
+  if (!id) return showToast('ไม่พบรหัสผู้รับบริการสำหรับสร้าง PDF', 'warning');
+  showLoading('กำลังสร้างไฟล์ PDF แฟ้มประวัติสุขภาพ...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.url) {
+        showToast('สร้างไฟล์ PDF เรียบร้อยแล้ว', 'success');
+        window.open(res.url, '_blank');
+      } else {
+        showToast('ไม่สามารถสร้างไฟล์ PDF ได้', 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('สร้าง PDF ไม่สำเร็จ: ' + (err.message || ''), 'danger');
+    })
+    .exportStudentPdf(id);
+}
+
+/** สร้างและดาวน์โหลด PDF หนังสือให้ความยินยอมรายคน */
+function downloadConsentPdf() {
+  const id = selectedProfileId_();
+  if (!id) return showToast('ไม่พบรหัสผู้รับบริการสำหรับสร้างหนังสือยินยอม', 'warning');
+  showLoading('กำลังสร้างหนังสือให้ความยินยอม PDF...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.url) {
+        showToast('สร้างหนังสือยินยอม PDF เรียบร้อยแล้ว', 'success');
+        window.open(res.url, '_blank');
+      } else {
+        showToast('ไม่สามารถสร้างหนังสือยินยอม PDF ได้', 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('สร้างหนังสือยินยอมไม่สำเร็จ: ' + (err.message || ''), 'danger');
+    })
+    .exportStudentConsentPdf(id);
+}
+
 /** พิมพ์แฟ้มประวัติรายคน (ทุกแท็บ) */
 function printProfileFile() {
   const modal = document.getElementById('profileModal');
@@ -3049,6 +3098,9 @@ function closeModal(id) {
 
 let liffCurrentStudent = null;
 let liffConfigData = null;
+let liffIdentity = null;
+let liffBinding = null;
+let liffOwnProfile = null;
 
 function checkLiffModeOnLoad() {
   const params = new URLSearchParams(window.location.search);
@@ -3066,56 +3118,362 @@ function checkLiffModeOnLoad() {
       }, 300);
       return true;
     }
-    const studentIdParam = params.get('id') || params.get('studentId');
-    if (studentIdParam && studentIdParam.trim().length === 7) {
-      setTimeout(function() {
-        quickFillLiffId(studentIdParam.trim());
-      }, 400);
-    }
+    // ไม่เปิดช่องให้ระบุรหัสนักเรียนคนอื่นผ่าน URL — ระบบจะแสดงเฉพาะรหัสที่ผูกกับ LINE เท่านั้น
     return true;
   }
   return false;
 }
 
 function initLiffSdk() {
-  if (typeof liff === 'undefined') return;
   const params = new URLSearchParams(window.location.search);
-  const isLiffMode = params.get('page') === 'liff' || params.get('liff') === 'true' || window.location.hash.includes('liff') || (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient());
-  if (!isLiffMode) return; // ไม่รัน LIFF หรือ redirect หากเปิดหน้าหลักของเจ้าหน้าที่
+  const isLiffMode = params.get('page') === 'liff' || params.get('liff') === 'true' ||
+    window.location.hash.includes('liff') || (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient());
+  if (!isLiffMode) return;
+
+  if (typeof liff === 'undefined') {
+    showLiffWebNotice();
+    return;
+  }
 
   google.script.run
     .withSuccessHandler(function(config) {
       liffConfigData = config;
-      if (config && config.liffId && config.liffId.trim() !== '') {
-        liff.init({ liffId: config.liffId.trim() })
-          .then(function() {
-            if (!liff.isLoggedIn()) {
-              liff.login({ redirectUri: window.location.href });
-              return;
-            }
-            if (liff.isLoggedIn()) {
-              liff.getProfile().then(function(profile) {
-                const bar = document.getElementById('liffUserProfileBar');
-                const nameEl = document.getElementById('liffUserName');
-                const avatarEl = document.getElementById('liffUserAvatar');
-                if (bar && nameEl) {
-                  bar.style.display = 'flex';
-                  nameEl.textContent = profile.displayName || 'ผู้ใช้งาน LINE';
-                  if (profile.pictureUrl && avatarEl) {
-                    avatarEl.src = profile.pictureUrl;
-                  }
-                }
-              }).catch(function(err) {
-                console.log('LIFF profile warning:', err);
-              });
-            }
-          })
-          .catch(function(err) {
-            console.log('LIFF init warning:', err);
-          });
+      if (!config || !config.liffId || !config.liffId.trim()) {
+        showLiffWebNotice();
+        return;
       }
+      liff.init({ liffId: config.liffId.trim() })
+        .then(function() {
+          if (!liff.isLoggedIn()) {
+            // Only redirect inside the LINE in-app browser. A normal desktop browser
+            // would hit "invalid url" because the Worker domain is not a registered
+            // LINE callback, so show a safe preview notice instead.
+            if (liff.isInClient && liff.isInClient()) {
+              liff.login({ redirectUri: window.location.href });
+            } else {
+              showLiffWebNotice();
+            }
+            return;
+          }
+          liff.getProfile().then(function(profile) {
+            liffIdentity = profile;
+            showLiffProfileBar(profile);
+            refreshLiffBinding();
+          }).catch(function(err) {
+            console.log('LIFF profile warning:', err);
+            showLiffWebNotice();
+          });
+        })
+        .catch(function(err) {
+          console.log('LIFF init warning:', err);
+          showLiffWebNotice();
+        });
+    })
+    .withFailureHandler(function() {
+      showLiffWebNotice();
     })
     .getLiffConfig();
+}
+
+function showLiffProfileBar(profile) {
+  const bar = document.getElementById('liffUserProfileBar');
+  const nameEl = document.getElementById('liffUserName');
+  const avatarEl = document.getElementById('liffUserAvatar');
+  if (bar && nameEl) {
+    bar.style.display = 'flex';
+    nameEl.textContent = profile.displayName || 'ผู้ใช้งาน LINE';
+    if (profile.pictureUrl && avatarEl) avatarEl.src = profile.pictureUrl;
+  }
+}
+
+function showLiffWebNotice() {
+  const notice = document.getElementById('liffWebNotice');
+  if (notice) notice.style.display = 'flex';
+  const bind = document.getElementById('liffBindingCard');
+  if (bind) bind.style.display = 'none';
+  const lookup = document.getElementById('liffLookupCard');
+  if (lookup) lookup.style.display = 'none';
+  const own = document.getElementById('liffOwnProfile');
+  if (own) {
+    own.style.display = 'block';
+    own.innerHTML = '<div class="liff-card"><div class="liff-empty" style="text-align:center;padding:22px 10px;">' +
+      '<i class="fas fa-mobile-alt" style="font-size:2rem;color:#0f7a56;display:block;margin-bottom:10px;"></i>' +
+      'กรุณาเปิดลิงก์ LIFF นี้ผ่านแอป LINE บนมือถือ เพื่อยืนยันตัวตนและเข้าถึงแฟ้มสุขภาพของคุณ</div></div>';
+  }
+}
+
+/**
+ * ตรวจสอบสถานะการผูกบัญชี LINE กับรหัสนักเรียน
+ */
+function refreshLiffBinding() {
+  if (!liffIdentity) {
+    showLiffWebNotice();
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(status) {
+      liffBinding = status || { bound: false };
+      const bindCard = document.getElementById('liffBindingCard');
+      const lookupCard = document.getElementById('liffLookupCard');
+      const own = document.getElementById('liffOwnProfile');
+      const heroTitle = document.getElementById('liffHeroTitle');
+      const heroSub = document.getElementById('liffHeroSub');
+
+      if (liffBinding.bound) {
+        if (bindCard) bindCard.style.display = 'none';
+        if (lookupCard) lookupCard.style.display = 'none';
+        if (heroTitle) heroTitle.textContent = 'สวัสดี ' + (liffBinding.studentName || 'นพอ.');
+        if (heroSub) heroSub.textContent = (liffBinding.group || 'นักเรียนพยาบาล') + ' · ' + (liffBinding.level || '') +
+          ' — แฟ้มสุขภาพนี้แสดงเฉพาะคุณเท่านั้น';
+        loadMyLiffProfile();
+      } else {
+        if (bindCard) bindCard.style.display = 'block';
+        if (lookupCard) lookupCard.style.display = 'none';
+        if (own) own.style.display = 'none';
+        if (heroTitle) heroTitle.textContent = 'ยินดีต้อนรับ นพอ.';
+        if (heroSub) heroSub.textContent = 'ผูกบัญชี LINE กับรหัสนักเรียนครั้งเดียว เพื่อเปิดแฟ้มสุขภาพส่วนตัว';
+      }
+    })
+    .withFailureHandler(function(err) {
+      showLiffWebNotice();
+      showToast(err.message || 'ตรวจสอบสถานะ LINE ไม่สำเร็จ', 'warning');
+    })
+    .getLiffBindingStatus();
+}
+
+/**
+ * โหลดแฟ้มสุขภาพของนักเรียนที่ผูกบัญชีแล้ว (เฉพาะของตนเอง)
+ */
+function loadMyLiffProfile() {
+  const own = document.getElementById('liffOwnProfile');
+  if (!own) return;
+  own.style.display = 'block';
+  own.innerHTML = '<div class="liff-card" style="text-align:center;padding:26px;"><i class="fas fa-spinner fa-spin" style="font-size:1.6rem;color:#0f7a56;"></i><p class="liff-empty" style="margin-top:10px;">กำลังโหลดแฟ้มสุขภาพของคุณ...</p></div>';
+  google.script.run
+    .withSuccessHandler(function(profile) {
+      liffOwnProfile = profile;
+      liffCurrentStudent = profile;
+      renderLiffOwnProfile(profile);
+    })
+    .withFailureHandler(function(err) {
+      own.innerHTML = '<div class="liff-card"><div class="liff-inline-error" style="margin:0;">' +
+        liffEsc_(err.message || 'ไม่สามารถโหลดแฟ้มสุขภาพได้') + '</div></div>';
+    })
+    .getMyLiffProfile();
+}
+
+function liffEsc_(value) {
+  return String(value === null || value === undefined ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function liffDateText_(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function liffVal_(value) {
+  const text = value === null || value === undefined ? '' : String(value).trim();
+  return text && text !== '-' ? text : '-';
+}
+
+function renderLiffOwnProfile(profile) {
+  const own = document.getElementById('liffOwnProfile');
+  if (!own) return;
+  const name = recipientLiffName_(profile);
+  const code = liffVal_(profile.NumberOrOrder || profile.RecipientID);
+  const s = profile.summary || {};
+  const photo = profile.photo && profile.photo.thumbnailUrl;
+  const allergy = String(profile.DrugAllergies || '').trim();
+  const hasAllergy = allergy && allergy !== '-' && allergy !== 'ไม่มี';
+  const consent = profile.liff && profile.liff.hasConsent;
+
+  const photoHtml = photo
+    ? '<img class="liff-own-photo" src="' + liffEsc_(photo) + '" alt="รูป นพอ.">'
+    : '<div class="liff-own-photo"><i class="fas fa-user-nurse"></i></div>';
+
+  let visitsHtml = '<div class="liff-empty">ยังไม่มีประวัติการเข้ารับบริการ</div>';
+  if (profile.visits && profile.visits.length) {
+    visitsHtml = '<div class="liff-list">' + profile.visits.slice(0, 6).map(function(v) {
+      const urgency = String(v.UrgencyLevel || '');
+      const tagClass = /Red|ฉุกเฉิน/i.test(urgency) ? 'red' : (/Yellow|ปานกลาง/i.test(urgency) ? 'yellow' : 'green');
+      return '<div class="liff-list-item">' +
+        '<div class="li-top"><span><i class="far fa-calendar"></i> ' + liffDateText_(v.VisitDate) + '</span>' +
+        '<span class="liff-tag ' + tagClass + '">' + liffEsc_(liffVal_(urgency)) + '</span></div>' +
+        '<div class="li-main">' + liffEsc_(liffVal_(v.ChiefComplaint)) + '</div>' +
+        '<div class="li-sub"><i class="fas fa-stethoscope"></i> ' + liffEsc_(liffVal_(v.Diagnosis || v.InitialAssessment)) +
+        ' · <i class="fas fa-notes-medical"></i> ' + liffEsc_(liffVal_(v.TreatmentDetails || v.Outcome)) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  let vaccineHtml = '<div class="liff-empty">ยังไม่มีประวัติวัคซีน</div>';
+  if (profile.vaccinations && profile.vaccinations.length) {
+    vaccineHtml = '<div class="liff-list">' + profile.vaccinations.slice(0, 12).map(function(v) {
+      return '<div class="liff-list-item"><div class="li-top"><span>' + liffDateText_(v.VaccinationDate) +
+        '</span><span class="liff-tag green">เข็ม ' + liffEsc_(liffVal_(v.DoseNumber)) + '</span></div>' +
+        '<div class="li-main">' + liffEsc_(liffVal_(v.VaccineName)) + '</div>' +
+        '<div class="li-sub">' + liffEsc_(liffVal_(v.AdministeredBy || v.Site)) + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  let certHtml = '<div class="liff-empty">ยังไม่มีใบรับรองแพทย์ / ใบลา</div>';
+  if (profile.certificates && profile.certificates.length) {
+    certHtml = '<div class="liff-list">' + profile.certificates.slice(0, 10).map(function(v) {
+      return '<div class="liff-list-item"><div class="li-top"><span>' + liffDateText_(v.IssueDate) +
+        '</span><span class="liff-tag gray">' + liffEsc_(liffVal_(v.Hospital)) + '</span></div>' +
+        '<div class="li-main">' + liffEsc_(liffVal_(v.Diagnosis)) + '</div>' +
+        '<div class="li-sub">' + liffEsc_(liffVal_(v.Doctor)) + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  const docs = (profile.studentDocuments || []).concat(profile.documents || []);
+  let docsHtml = '<div class="liff-empty">ยังไม่มีเอกสารแนบรายคน</div>';
+  if (docs.length) {
+    docsHtml = docs.slice(0, 20).map(function(d) {
+      return '<div class="liff-doc-row"><div class="liff-doc-icon"><i class="fas fa-file-pdf"></i></div>' +
+        '<div><div class="liff-doc-name">' + liffEsc_(liffVal_(d.FileName || d.DocType)) + '</div>' +
+        '<div class="liff-doc-meta">' + liffEsc_(liffVal_(d.DocType)) + ' · ' + liffDateText_(d.RecordedAt || d.UploadedAt) + '</div></div>' +
+        (d.FileUrl ? '<a class="liff-doc-link" href="' + liffEsc_(d.FileUrl) + '" target="_blank" rel="noopener"><i class="fas fa-external-link-alt"></i></a>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  own.innerHTML =
+    '<div class="liff-own-card">' +
+      '<div class="liff-own-head">' + photoHtml +
+        '<div style="min-width:0;">' +
+          '<div class="liff-own-name">' + liffEsc_(name) + '</div>' +
+          '<div class="liff-own-meta">' + liffEsc_(liffVal_(profile.Group)) + ' · ' + liffEsc_(liffVal_(profile.SubUnit || profile.Level)) + '</div>' +
+          '<div class="liff-own-code">' + liffEsc_(code) + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="liff-own-actions">' +
+        '<button type="button" class="liff-btn-primary" onclick="requestLiffPdf()"><i class="fas fa-file-pdf"></i> ดาวน์โหลด PDF</button>' +
+        '<button type="button" class="liff-btn-ghost" onclick="switchLiffTab(\'checkin\')"><i class="fas fa-stethoscope"></i> แจ้งอาการป่วย</button>' +
+      '</div>' +
+    '</div>' +
+
+    (hasAllergy
+      ? '<div class="liff-allergy-danger"><i class="fas fa-exclamation-triangle"></i><div><strong>คำเตือนความปลอดภัยทางการแพทย์</strong><div style="font-size:0.82rem;margin-top:2px;">มีประวัติแพ้ยา: <strong>' + liffEsc_(allergy) + '</strong> — ห้ามจ่ายยาหรืออนุพันธ์กลุ่มนี้</div></div></div>'
+      : '<div class="liff-consent-status"><i class="fas fa-check-circle"></i><span>ไม่มีประวัติแพ้ยาที่บันทึกไว้</span></div>') +
+
+    '<div class="liff-summary-grid">' +
+      '<div class="liff-summary-chip"><div class="num">' + (s.totalVisits || 0) + '</div><div class="lbl"><i class="fas fa-notes-medical"></i> การเจ็บป่วย</div></div>' +
+      '<div class="liff-summary-chip"><div class="num">' + (s.totalVaccinations || 0) + '</div><div class="lbl"><i class="fas fa-syringe"></i> วัคซีน</div></div>' +
+      '<div class="liff-summary-chip"><div class="num">' + (s.totalCertificates || 0) + '</div><div class="lbl"><i class="fas fa-file-medical"></i> ใบรับรองแพทย์</div></div>' +
+      '<div class="liff-summary-chip"><div class="num">' + (s.totalDocuments || 0) + '</div><div class="lbl"><i class="fas fa-folder-open"></i> เอกสารแนบ</div></div>' +
+    '</div>' +
+
+    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-id-card"></i> ข้อมูลสุขภาพพื้นฐาน</div></div>' +
+      '<div class="liff-list">' +
+        '<div class="liff-list-item"><div class="li-top"><span>หมู่เลือด</span><span>โรคประจำตัว</span></div><div class="li-main">' + liffEsc_(liffVal_(profile.BloodType)) + ' · ' + liffEsc_(liffVal_(profile.CongenitalDiseases)) + '</div></div>' +
+        '<div class="liff-list-item"><div class="li-top"><span>น้ำหนัก / ส่วนสูง</span><span>โรงพยาบาลประจำ</span></div><div class="li-main">' + liffEsc_(liffVal_(profile.Weight)) + ' กก. / ' + liffEsc_(liffVal_(profile.Height)) + ' ซม. · ' + liffEsc_(liffVal_(profile.RegularHospital)) + '</div></div>' +
+        '<div class="liff-list-item"><div class="li-top"><span>แพ้อาหาร / อื่น ๆ</span><span>ยาประจำตัว</span></div><div class="li-main">' + liffEsc_(liffVal_([profile.FoodAllergies, profile.OtherAllergies].filter(Boolean).join(' ') || '-')) + ' · ' + liffEsc_(liffVal_(profile.RegularMedicines)) + '</div></div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-notes-medical"></i> ประวัติการเจ็บป่วย</div><span class="liff-count-pill">' + (s.totalVisits || 0) + '</span></div>' + visitsHtml + '</div>' +
+    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-syringe"></i> ประวัติวัคซีน</div><span class="liff-count-pill">' + (s.totalVaccinations || 0) + '</span></div>' + vaccineHtml + '</div>' +
+    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-file-medical"></i> ใบรับรองแพทย์ / ใบลา</div><span class="liff-count-pill">' + (s.totalCertificates || 0) + '</span></div>' + certHtml + '</div>' +
+    '<div class="liff-section"><div class="liff-section-head"><div class="liff-section-title"><i class="fas fa-folder-open"></i> เอกสารแนบรายคน</div><span class="liff-count-pill">' + docs.length + '</span></div>' + docsHtml + '</div>' +
+
+    '<div class="liff-consent-status ' + (consent ? '' : 'pending') + '"><i class="fas ' + (consent ? 'fa-shield-alt' : 'fa-clock') + '"></i>' +
+      '<span>' + (consent
+        ? 'บันทึกความยินยอมแล้ว เมื่อ ' + liffDateText_(profile.liff.consentAt) + ' (เวอร์ชัน ' + liffEsc_(liffVal_(profile.liff.consentVersion)) + ')'
+        : 'ยังไม่พบความยินยอมในระบบ กรุณาติดต่อห้องพยาบาล') + '</span></div>' +
+    '<button type="button" class="liff-btn-soft" style="align-self:flex-start;" onclick="requestConsentPdf()"><i class="fas fa-file-signature"></i> ดาวน์โหลดหนังสือให้ความยินยอม (PDF)</button>';
+
+  syncCollegeLogos();
+}
+
+function recipientLiffName_(profile) {
+  if (profile.liff && profile.liff.studentName) return profile.liff.studentName;
+  if (typeof recipientFullName_ === 'function') {
+    try { return recipientFullName_(profile); } catch (e) {}
+  }
+  return (profile.Title || '') + (profile.FirstName || '') + ' ' + (profile.LastName || '');
+}
+
+function requestLiffPdf() {
+  showLoading('กำลังสร้างไฟล์ PDF แฟ้มประวัติสุขภาพ...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.url) {
+        showToast('สร้างไฟล์ PDF เรียบร้อยแล้ว', 'success');
+        window.open(res.url, '_blank');
+      } else {
+        showToast('ไม่สามารถสร้างไฟล์ PDF ได้', 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('สร้าง PDF ไม่สำเร็จ: ' + (err.message || ''), 'danger');
+    })
+    .requestStudentPdf();
+}
+
+function requestConsentPdf() {
+  showLoading('กำลังสร้างหนังสือให้ความยินยอม PDF...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      hideLoading();
+      if (res && res.url) {
+        showToast('สร้างหนังสือยินยอม PDF เรียบร้อยแล้ว', 'success');
+        window.open(res.url, '_blank');
+      } else {
+        showToast('ไม่สามารถสร้างหนังสือยินยอม PDF ได้', 'danger');
+      }
+    })
+    .withFailureHandler(function(err) {
+      hideLoading();
+      showToast('สร้างหนังสือยินยอมไม่สำเร็จ: ' + (err.message || ''), 'danger');
+    })
+    .requestStudentConsentPdf();
+}
+
+function showLiffConsentDetail() {
+  const modal = document.getElementById('liffConsentModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeLiffConsentDetail() {
+  const modal = document.getElementById('liffConsentModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function handleLiffBind(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const code = (document.getElementById('liffBindStudentId').value || '').replace(/\D/g, '');
+  const fullName = (document.getElementById('liffBindFullName').value || '').trim();
+  const accepted = document.getElementById('liffBindConsent').checked;
+  const errBox = document.getElementById('liffBindError');
+  const btn = document.getElementById('liffBindSubmitBtn');
+  const fail = function(message) {
+    if (errBox) { errBox.textContent = message; errBox.style.display = 'block'; }
+    showToast(message, 'warning');
+  };
+  if (!/^\d{7}$/.test(code)) return fail('กรุณากรอกรหัสนักเรียน 7 หลักให้ถูกต้อง');
+  if (fullName.length < 4) return fail('กรุณากรอกชื่อ-นามสกุลจริงให้ครบถ้วน');
+  if (!accepted) return fail('กรุณายอมรับหนังสือให้ความยินยอมก่อนผูกบัญชี');
+  if (errBox) errBox.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังตรวจสอบ...'; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock-open"></i> ผูกบัญชีและเปิดแฟ้มของฉัน'; }
+      showToast('ผูกบัญชี LINE เรียบร้อยแล้ว', 'success');
+      refreshLiffBinding();
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock-open"></i> ผูกบัญชีและเปิดแฟ้มของฉัน'; }
+      fail(err.message || 'ผูกบัญชีไม่สำเร็จ');
+    })
+    .bindLiffStudent({ studentCode: code, fullName: fullName, accepted: true });
 }
 
 function switchToLiffMode() {
@@ -3141,18 +3499,23 @@ function switchLiffTab(tabName) {
   document.querySelectorAll('.liff-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.liffTab === tabName);
   });
-  
+
   document.querySelectorAll('.liff-tab-content').forEach(sec => {
     sec.classList.remove('active');
   });
-  
+
   if (tabName === 'lookup') {
     document.getElementById('liffTabLookup').classList.add('active');
+    if (liffBinding && liffBinding.bound && !liffOwnProfile) loadMyLiffProfile();
   } else if (tabName === 'checkin') {
     document.getElementById('liffTabCheckin').classList.add('active');
-    if (liffCurrentStudent) {
-      document.getElementById('liffCheckinStudentId').value = liffCurrentStudent.NumberOrOrder || '';
-      verifyCheckinStudentId();
+    const boundCode = liffBinding && liffBinding.bound ? (liffBinding.studentCode || '') : '';
+    const code = boundCode || (liffCurrentStudent ? (liffCurrentStudent.NumberOrOrder || '') : '');
+    const input = document.getElementById('liffCheckinStudentId');
+    if (code && input) {
+      input.value = code;
+      input.readOnly = !!boundCode;
+      if (boundCode) verifyCheckinStudentId();
     }
   } else if (tabName === 'card') {
     document.getElementById('liffTabCard').classList.add('active');
@@ -3160,6 +3523,7 @@ function switchLiffTab(tabName) {
       renderDigitalHealthCard(liffCurrentStudent);
     }
   }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function quickFillLiffId(id) {
@@ -3334,7 +3698,13 @@ function verifyCheckinStudentId() {
 
 function handleLiffCheckinSubmit(e) {
   if (e && e.preventDefault) e.preventDefault();
-  
+
+  if (!liffBinding || !liffBinding.bound) {
+    showToast('กรุณาผูกบัญชี LINE กับรหัสนักเรียนก่อนแจ้งอาการ', 'warning');
+    switchLiffTab('lookup');
+    return;
+  }
+
   const studentId = document.getElementById('liffCheckinStudentId').value.trim();
   const chiefComplaint = document.getElementById('liffChiefComplaint').value.trim();
   const location = document.getElementById('liffLocation').value;
@@ -3375,26 +3745,7 @@ function handleLiffCheckinSubmit(e) {
   btn.disabled = true;
   showLoading('กำลังส่งข้อมูลแจ้งอาการป่วยเข้าห้องพยาบาล...');
 
-  // ส่งการแจ้งเตือนไปยัง Telegram ทันทีผ่าน Cloudflare Worker Edge
-  try {
-    fetch('https://rtafnc-medical.anuchit1tube168.workers.dev/api/telegram/triage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        studentName: liffCurrentStudent ? ((liffCurrentStudent.Title || '') + (liffCurrentStudent.FirstName || '') + ' ' + (liffCurrentStudent.LastName || '')) : studentId,
-        studentId: studentId,
-        group: liffCurrentStudent ? (liffCurrentStudent.Group || '-') : '-',
-        department: liffCurrentStudent ? (liffCurrentStudent.Department || '-') : '-',
-        bloodGroup: liffCurrentStudent ? (liffCurrentStudent.BloodGroup || '-') : '-',
-        allergy: liffCurrentStudent ? (liffCurrentStudent.AllergyMedication || '-') : '-',
-        location: location,
-        chiefComplaint: chiefComplaint,
-        incidentDetails: details,
-        urgency: urgency
-      })
-    }).catch(function() {});
-  } catch(e) {}
-
+  // การแจ้งเตือน Telegram + LINE ถูกส่งจากฝั่งเซิร์ฟเวอร์หลังบันทึกสำเร็จ
   google.script.run
     .withSuccessHandler(function(res) {
       hideLoading();

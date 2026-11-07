@@ -2090,6 +2090,111 @@ function importInspectSources() {
 }
 
 /**
+ * ตรวจโครงสร้างโฟลเดอร์ "Smart database ปีการศึกษา 2567" และ "smart data base 2568"
+ * โดยแสดงเฉพาะรายการที่เกี่ยวกับสุขภาพ และติดธงความดี/จิตอาสาไว้เป็นรายการที่ต้องข้าม
+ * ใช้สำหรับตรวจสอบก่อนนำเข้า (ไม่เขียนข้อมูลใด ๆ)
+ */
+function importInspectSmartFolders() {
+  var wanted = [
+    "Smart database ปีการศึกษา 2567",
+    "smart data base 2568",
+    "Smart database 2567",
+    "Smart database 2568"
+  ];
+  var roots = [];
+  var seenRoot = {};
+  wanted.forEach(function (name) {
+    var it = DriveApp.getFoldersByName(name);
+    while (it.hasNext()) {
+      var f = it.next();
+      if (!seenRoot[f.getId()]) {
+        seenRoot[f.getId()] = true;
+        roots.push({ id: f.getId(), name: f.getName() });
+      }
+    }
+  });
+
+  var HEALTH_RE = /สุขภาพ|เจ็บป่วย|ป่วย|ตรวจ|รักษา|พยาบาล|วัคซีน|ฉีด|ใบรับรอง|แพทย์|ยา|โรค|แพ้|ประวัติส่วนตัว|health|medical|sick|vaccin|clinic/i;
+  var GOODDEED_RE = /ความดี|จิตอาสา|good\s*deed|volunteer/i;
+
+  function isHealthName_(name) {
+    var n = String(name || "");
+    if (GOODDEED_RE.test(n)) return false;
+    return HEALTH_RE.test(n);
+  }
+
+  function walk_(folder, depth, pathText) {
+    var node = {
+      id: folder.getId(),
+      name: folder.getName(),
+      path: pathText ? pathText + " / " + folder.getName() : folder.getName(),
+      health: isHealthName_(folder.getName()),
+      goodDeed: GOODDEED_RE.test(folder.getName()),
+      files: [],
+      folders: []
+    };
+    var files = folder.getFiles();
+    var count = 0;
+    while (files.hasNext() && count < 500) {
+      var file = files.next();
+      var fname = file.getName();
+      var health = isHealthName_(fname);
+      var good = GOODDEED_RE.test(fname);
+      if (health || good) {
+        node.files.push({
+          id: file.getId(),
+          name: fname,
+          mime: file.getMimeType(),
+          size: file.getSize(),
+          health: health,
+          goodDeed: good,
+          updated: file.getLastUpdated()
+        });
+      }
+      count++;
+    }
+    if (depth < 5) {
+      var subs = folder.getFolders();
+      var guard = 0;
+      while (subs.hasNext() && guard < 200) {
+        node.folders.push(walk_(subs.next(), depth + 1, node.path));
+        guard++;
+      }
+    }
+    return node;
+  }
+
+  function summarize_(node, acc) {
+    node.files.forEach(function (f) {
+      if (f.goodDeed) acc.goodDeedFiles++;
+      else if (f.health) acc.healthFiles++;
+    });
+    if (node.goodDeed) acc.goodDeedFolders++;
+    node.folders.forEach(function (c) { summarize_(c, acc); });
+    return acc;
+  }
+
+  var trees = roots.map(function (r) {
+    var tree;
+    try {
+      tree = walk_(DriveApp.getFolderById(r.id), 0, "");
+    } catch (e) {
+      tree = { id: r.id, name: r.name, error: e.message, files: [], folders: [] };
+    }
+    var acc = { healthFiles: 0, goodDeedFiles: 0, goodDeedFolders: 0 };
+    summarize_(tree, acc);
+    tree.summary = acc;
+    return tree;
+  });
+
+  return {
+    inspectedAt: nowStamp_(),
+    keywords: { health: String(HEALTH_RE), goodDeed: String(GOODDEED_RE) },
+    roots: trees
+  };
+}
+
+/**
  * รันนำเข้าเป็นขั้น ๆ เพื่อไม่ให้เกินเวลาประมวลผลของ Apps Script
  * step: recipients | visits1 | visits2 | monthly | vaccines | certificates | documents | photos | reorganize
  */

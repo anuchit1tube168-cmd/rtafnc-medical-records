@@ -595,6 +595,12 @@ function doGet(e) {
       } catch (err) {
         jsonResult = { success: false, error: err.message };
       }
+    } else if (api === "importInspectSmart") {
+      try {
+        jsonResult = { success: true, smart: importInspectSmartFolders() };
+      } catch (err) {
+        jsonResult = { success: false, error: err.message };
+      }
     } else if (api === "importStep") {
       try {
         jsonResult = importStep(e.parameter.step, e.parameter.key);
@@ -1055,13 +1061,15 @@ function initializeSheets(ss) {
       "NumberOrOrder", "BloodType", "Weight", "Height", "CongenitalDiseases", "DrugAllergies", 
       "FoodAllergies", "OtherAllergies", "RegularMedicines", "HealthConstraints", "RegularHospital", 
       "ContactName", "ContactRelationship", "ContactPhone", "EmergencyContact", "EmergencyPhone", 
-      "Note", "Status", "IsDemo", "CreatedAt", "CreatedBy", "UpdatedAt", "UpdatedBy"
+      "Note", "Status", "IsDemo", "CreatedAt", "CreatedBy", "UpdatedAt", "UpdatedBy",
+      "MedicalRights", "Competencies"
     ],
     "Visits": [
       "VisitID", "VisitDate", "TimeIn", "TimeOut", "RecipientID", "RecipientName", "RecipientType", 
       "Group", "Department", "AccompaniedBy", "IncidentLocation", "IncidentActivity", "IncidentType", 
       "ChiefComplaint", "IncidentDetails", "UrgencyLevel", "InitialAssessment", "Outcome", 
-      "ContactNotified", "ReferralCreated", "FollowUpScheduled", "VisitStatus", "IsDemo", "RecordedBy", "RecordedAt"
+      "ContactNotified", "ReferralCreated", "FollowUpScheduled", "VisitStatus", "IsDemo", "RecordedBy", "RecordedAt",
+      "TreatedAtDepartment", "RequestReason", "RequestType"
     ],
     "Vitals": [
       "VitalID", "VisitID", "RecipientID", "RecordedAt", "Temperature", "Weight", "Height", 
@@ -1103,6 +1111,19 @@ function initializeSheets(ss) {
       "DocumentID", "StudentCode", "RecipientID", "RecipientName", "DocType",
       "FileName", "FileUrl", "SourceFolder", "SourceKey", "RecordedAt"
     ],
+    "LineBindings": [
+      "LineUserID", "StudentCode", "DisplayName", "PictureURL", "Status",
+      "ConsentVersion", "ConsentAt", "CreatedAt", "UpdatedAt", "Note"
+    ],
+    "NotificationLogs": [
+      "LogID", "Channel", "Category", "RecipientRef", "StudentCode", "Target",
+      "Title", "Message", "Success", "Error", "RefID", "CreatedAt"
+    ],
+    "ConsentForms": [
+      "ConsentID", "StudentCode", "RecipientID", "RecipientName", "ConsentVersion",
+      "ConsentType", "Accepted", "AcceptedAt", "LineUserID", "SignatureName",
+      "PdfFileId", "PdfUrl", "Details"
+    ],
     "Settings": ["SettingKey", "SettingValue", "Description", "UpdatedAt", "UpdatedBy"],
     "AuditLogs": ["LogID", "Timestamp", "Username", "Role", "ActionType", "ActionDetails", "IpAddress"]
   };
@@ -1122,6 +1143,39 @@ function initializeSheets(ss) {
         .setFontColor("#ffffff");
     }
   }
+}
+
+/**
+ * เติมคอลัมน์ใหม่ให้ชีตเดิมโดยไม่กระทบข้อมูลและลำดับคอลัมน์เดิม
+ * ใช้เมื่อระบบถูกอัปเดตฟิลด์สุขภาพใหม่ (สิทธิการรักษา, สมรรถนะ, เหตุผลการขอตรวจ)
+ */
+function ensureSheetExtraColumns_(ss, sheetName, extraHeaders) {
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return false;
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(extraHeaders);
+    sheet.getRange(1, 1, 1, extraHeaders.length)
+      .setFontWeight("bold").setBackground("#0d9488").setFontColor("#ffffff");
+    return true;
+  }
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const missing = extraHeaders.filter(function (h) { return headers.indexOf(h) === -1; });
+  if (!missing.length) return false;
+  sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+  return true;
+}
+
+/** ตรวจและเติมคอลัมน์สุขภาพรุ่นใหม่ (เรียกได้บ่อย ไม่กระทบข้อมูลเดิม) */
+function ensureHealthSchema_(ss) {
+  ss = ss || getSpreadsheet();
+  ensureSheetExtraColumns_(ss, "ServiceRecipients", ["MedicalRights", "Competencies"]);
+  ensureSheetExtraColumns_(ss, "Visits", ["TreatedAtDepartment", "RequestReason", "RequestType"]);
+  ensureSheetExtraColumns_(ss, "NotificationLogs", [
+    "LogID", "Channel", "Category", "RecipientRef", "StudentCode", "Target",
+    "Title", "Message", "Success", "Error", "RefID", "CreatedAt"
+  ]);
+  return ss;
 }
 
 /**
@@ -2291,8 +2345,13 @@ function getServiceRecipients(sessionToken, filters) {
  */
 function getServiceRecipientById(sessionToken, id) {
   const session = validateSession(sessionToken);
-  const isDemo = session.role === "DEMO";
-  
+  return buildServiceRecipientProfile_(id, session.role === "DEMO");
+}
+
+/**
+ * สร้างแฟ้มประวัติผู้รับบริการแบบละเอียด (ใช้ร่วมกันระหว่างเจ้าหน้าที่และ LINE LIFF)
+ */
+function buildServiceRecipientProfile_(id, isDemo) {
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName("ServiceRecipients");
   const data = sheet.getDataRange().getValues();
@@ -4849,10 +4908,56 @@ function clearRealRows(sheet, isDemoColumnName) {
 /**
  * ส่งข้อความแจ้งเตือนเข้าห้อง Telegram
  */
-function sendTelegramNotification(message) {
+/**
+ * บันทึกประวัติการแจ้งเตือนทุกช่องทางลงชีต NotificationLogs
+ * เพื่อให้ตรวจสอบย้อนหลังและออกรายงานได้รายคน
+ */
+function logNotification_(entry) {
+  try {
+    entry = entry || {};
+    const ss = getSpreadsheet();
+    ensureSheetExtraColumns_(ss, "NotificationLogs", [
+      "LogID", "Channel", "Category", "RecipientRef", "StudentCode", "Target",
+      "Title", "Message", "Success", "Error", "RefID", "CreatedAt"
+    ]);
+    const sheet = ss.getSheetByName("NotificationLogs") || ss.insertSheet("NotificationLogs");
+    const now = new Date();
+    const logId = "NTF-" + Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMddHHmmss") + "-" +
+      Math.random().toString(36).slice(2, 6).toUpperCase();
+    sheet.appendRow([
+      logId,
+      String(entry.channel || "-"),
+      String(entry.category || "GENERAL"),
+      String(entry.recipientRef || ""),
+      String(entry.studentCode || ""),
+      String(entry.target || ""),
+      String(entry.title || ""),
+      String(entry.message || ""),
+      entry.success === true,
+      String(entry.error || ""),
+      String(entry.refId || ""),
+      now
+    ]);
+    return logId;
+  } catch (e) {
+    Logger.log("logNotification_ failed: " + e.message);
+    return "";
+  }
+}
+
+function sendTelegramNotification(message, context) {
+  context = context || {};
   const botToken = getBackendConfig("TELEGRAM_BOT_TOKEN") || TELEGRAM_BOT_TOKEN;
   const chatId = getBackendConfig("TELEGRAM_CHAT_ID") || TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return { ok: false, error: "ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID" };
+  if (!botToken || !chatId) {
+    logNotification_({
+      channel: "TELEGRAM", category: context.category, recipientRef: context.recipientRef,
+      studentCode: context.studentCode, target: chatId, title: context.title,
+      message: message, success: false,
+      error: "ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID", refId: context.refId
+    });
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID" };
+  }
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const payload = {
     "chat_id": chatId,
@@ -4865,21 +4970,38 @@ function sendTelegramNotification(message) {
     "payload": JSON.stringify(payload),
     "muteHttpExceptions": true
   };
+  let result;
   try {
     const response = UrlFetchApp.fetch(url, options);
-    return JSON.parse(response.getContentText());
+    result = JSON.parse(response.getContentText());
   } catch (e) {
     Logger.log("Error sending Telegram message: " + e.message);
-    return { ok: false, error: e.message };
+    result = { ok: false, error: e.message };
   }
+  logNotification_({
+    channel: "TELEGRAM", category: context.category, recipientRef: context.recipientRef,
+    studentCode: context.studentCode, target: chatId, title: context.title,
+    message: message, success: !!(result && result.ok),
+    error: result && result.error, refId: context.refId
+  });
+  return result;
 }
 
 /**
  * ส่งข้อความแจ้งเตือนผ่าน LINE Messaging API
  */
-function sendLineNotification(message, targetUserId) {
+function sendLineNotification(message, targetUserId, context) {
+  context = context || {};
   const token = getBackendConfig("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN");
-  if (!token) return { ok: false, error: "ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN" };
+  if (!token) {
+    logNotification_({
+      channel: "LINE", category: context.category, recipientRef: context.recipientRef,
+      studentCode: context.studentCode, target: targetUserId || "broadcast", title: context.title,
+      message: message, success: false,
+      error: "ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN", refId: context.refId
+    });
+    return { ok: false, error: "ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN" };
+  }
   const url = targetUserId ? "https://api.line.me/v2/bot/message/push" : "https://api.line.me/v2/bot/message/broadcast";
   const payload = targetUserId ? {
     to: targetUserId,
@@ -4887,6 +5009,7 @@ function sendLineNotification(message, targetUserId) {
   } : {
     messages: [{ type: "text", text: message }]
   };
+  let result;
   try {
     const response = UrlFetchApp.fetch(url, {
       method: "post",
@@ -4895,11 +5018,21 @@ function sendLineNotification(message, targetUserId) {
       payload: JSON.stringify(payload),
       muteHttpExceptions: true
     });
-    return JSON.parse(response.getContentText());
+    result = JSON.parse(response.getContentText());
+    if (response.getResponseCode() >= 400 && !result.error) {
+      result = { ok: false, error: "LINE API ตอบกลับ " + response.getResponseCode() };
+    }
   } catch (e) {
     Logger.log("Error sending LINE message: " + e.message);
-    return { ok: false, error: e.message };
+    result = { ok: false, error: e.message };
   }
+  logNotification_({
+    channel: "LINE", category: context.category, recipientRef: context.recipientRef,
+    studentCode: context.studentCode, target: targetUserId || "broadcast", title: context.title,
+    message: message, success: !!(result && result.sentMessages && result.sentMessages.length),
+    error: result && result.error, refId: context.refId
+  });
+  return result;
 }
 
 /**
@@ -5265,6 +5398,67 @@ function getStudentRecentVisits(ss, recipientId) {
   }
 }
 
+/** แปลงวันที่เป็นส่วนประกอบแบบไทย (วันที่/เดือน/ปี พ.ศ./เวลา) */
+function thaiDateParts_(value) {
+  const d = value instanceof Date ? value : new Date(value || Date.now());
+  const valid = !isNaN(d.getTime());
+  const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+  if (!valid) return { day: "-", month: "-", year: "-", time: "-", full: "-", short: "-" };
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear() + 543;
+  const time = Utilities.formatDate(d, "Asia/Bangkok", "HH:mm");
+  return {
+    day: day, month: month, year: year, time: time,
+    full: day + " " + month + " " + year,
+    short: Utilities.formatDate(d, "Asia/Bangkok", "dd/MM/") + year
+  };
+}
+
+/**
+ * สร้างข้อความแจ้งเตือนตามแบบฟอร์ม "การขออนุญาตไปตรวจ/รักษา"
+ * ใช้โครงสร้างเดียวกันทั้ง Telegram (HTML) และ LINE (plain text)
+ */
+function buildCheckinNotificationText_(student, payload, visitId, timestamp, html) {
+  payload = payload || {};
+  const p = thaiDateParts_(timestamp);
+  const fullName = recipientFullName_(student);
+  const code = student.NumberOrOrder || student.RecipientID || "-";
+  const place = payload.incidentLocation || "ห้องพยาบาล วพอ.พอ.";
+  const dept = payload.treatedAtDepartment || payload.department || student.Department || "-";
+  const cc = payload.chiefComplaint || "-";
+  const reason = payload.reason || payload.incidentType || "มีอาการผิดปกติ";
+  const urgency = payload.urgencyLevel || "Green";
+  const urgencyText = urgency === "Red" ? "🔴 ฉุกเฉิน / ด่วนที่สุด"
+    : (urgency === "Yellow" ? "🟡 ปานกลาง" : "🟢 ทั่วไป");
+  const details = payload.incidentDetails || "-";
+  const yearLevel = String(student.Group || "").replace(/^นพอ\./, "").replace(/ชาย|หญิง/g, "").trim() || "-";
+
+  const b = function (text) { return html ? "<b>" + text + "</b>" : text; };
+  const lines = [];
+  lines.push((html ? "📋 " : "📋 ") + b("การขออนุญาตไปตรวจ/รักษา นพอ."));
+  lines.push("วันที่ " + p.day + " เดือน " + p.month + " พ.ศ. " + p.year);
+  lines.push(b("รหัส นพอ.:") + " " + code);
+  lines.push(b("ชื่อ - สกุล:") + " " + fullName);
+  lines.push(b("ชั้นปีที่:") + " " + yearLevel);
+  lines.push(b("ไปตรวจ/รักษาที่:") + " " + place);
+  lines.push(b("แผนกที่ไปตรวจ/รักษา:") + " " + dept);
+  lines.push(b("อาการสำคัญ (CC):") + " " + cc);
+  if (details && details !== "-") lines.push(b("รายละเอียดเพิ่มเติม:") + " " + details);
+  lines.push(b("เนื่องจาก:") + " " + reason);
+  lines.push(b("ระดับความเร่งด่วน:") + " " + urgencyText);
+  const allergy = String(student.DrugAllergies || student.AllergyMedication || "").trim();
+  if (allergy && allergy !== "-" && allergy !== "ไม่มี") lines.push("⚠️ " + b("ประวัติแพ้ยา:") + " " + allergy);
+  const congenital = String(student.CongenitalDiseases || student.CongenitalDisease || "").trim();
+  if (congenital && congenital !== "-" && congenital !== "ไม่มี") lines.push("🩺 " + b("โรคประจำตัว:") + " " + congenital);
+  const rights = String(student.MedicalRights || "").trim();
+  if (rights && rights !== "-") lines.push(b("สิทธิการรักษา:") + " " + rights);
+  lines.push(b("เลขที่บันทึก:") + " " + visitId);
+  lines.push(b("บันทึกเมื่อ") + " " + p.full + " เวลา " + p.time + " น.");
+  return lines.join("\n");
+}
+
 /**
  * บันทึกการขอรับบริการ/แจ้งอาการป่วยล่วงหน้าผ่าน LINE LIFF (Pre-triage Check-in)
  */
@@ -5278,7 +5472,7 @@ function submitLiffSelfCheckin(payload) {
     throw new Error("ไม่พบข้อมูลนักเรียนพยาบาลรหัส " + payload.studentId + " ในระบบ");
   }
   
-  const ss = getSpreadsheet();
+  const ss = ensureHealthSchema_(getSpreadsheet());
   const visitsSheet = ss.getSheetByName("Visits");
   const visitId = generateId("VIS", "Visits");
   const timestamp = new Date();
@@ -5286,6 +5480,9 @@ function submitLiffSelfCheckin(payload) {
   const timeStr = Utilities.formatDate(timestamp, "Asia/Bangkok", "HH:mm");
   
   const fullName = (student.Title || "") + (student.FirstName || "") + " " + (student.LastName || "");
+  const treatedAtDepartment = payload.treatedAtDepartment || payload.department || student.Department || "-";
+  const requestReason = payload.reason || payload.incidentType || "มีอาการผิดปกติ";
+  const requestType = payload.requestType || "ขออนุญาตไปตรวจ/รักษา";
   
   visitsSheet.appendRow([
     visitId,
@@ -5298,9 +5495,9 @@ function submitLiffSelfCheckin(payload) {
     student.Group || "-",
     student.Department || "-",
     payload.accompaniedBy || "ตนเอง (ผ่าน LINE LIFF)",
-    payload.incidentLocation || "หอพักนักเรียนพยาบาล",
+    payload.incidentLocation || "ห้องพยาบาล วพอ.พอ.",
     payload.incidentActivity || "การศึกษา/การฝึก",
-    payload.incidentType || "เจ็บป่วยทั่วไป",
+    requestReason,
     payload.chiefComplaint || "แจ้งอาการผ่าน LINE LIFF",
     payload.incidentDetails || "-",
     payload.urgencyLevel || "Green",
@@ -5309,31 +5506,38 @@ function submitLiffSelfCheckin(payload) {
     "NO", "NO", "NO", "Waiting",
     student.IsDemo || false,
     "LINE LIFF (" + (payload.lineDisplayName || student.NumberOrOrder || student.RecipientID) + ")",
-    timestamp
+    timestamp,
+    treatedAtDepartment,
+    requestReason,
+    requestType
   ]);
   
-  // ส่งการแจ้งเตือนไปยัง Telegram ทันทีเมื่อ นพอ. แจ้งอาการผ่าน LINE LIFF
+  // แจ้งเตือน Telegram + LINE ในรูปแบบเดียวกับแบบฟอร์มขออนุญาตไปตรวจ/รักษา
+  const notifyContext = {
+    category: "LIFF_CHECKIN",
+    recipientRef: student.RecipientID || student.NumberOrOrder,
+    studentCode: String(student.NumberOrOrder || ""),
+    title: "การขออนุญาตไปตรวจ/รักษา นพอ.",
+    refId: visitId
+  };
   try {
-    let urgencyIcon = "🟢 ทั่วไป";
-    if (payload.urgencyLevel === "Yellow") urgencyIcon = "🟡 ปานกลาง (ควรพบพยาบาลเร็วที่สุด)";
-    if (payload.urgencyLevel === "Red") urgencyIcon = "🔴 ด่วนที่สุด / ฉุกเฉิน";
-
-    let alertMsg = `📱 <b>แจ้งอาการป่วยล่วงหน้าผ่าน LINE LIFF</b>\n`;
-    alertMsg += `<b>นพอ.:</b> ${fullName} (รหัส: ${student.NumberOrOrder || student.RecipientID})\n`;
-    alertMsg += `<b>ชั้นปี/ตอน:</b> ${student.Group || "-"} / ${student.Department || "-"}\n`;
-    alertMsg += `<b>ระดับความเร่งด่วน:</b> ${urgencyIcon}\n`;
-    alertMsg += `<b>อาการสำคัญ:</b> ${payload.chiefComplaint || "-"}\n`;
-    alertMsg += `<b>สถานที่:</b> ${payload.incidentLocation || "หอพักนักเรียนพยาบาล"}\n`;
-    if (student.AllergyMedication && student.AllergyMedication !== "-" && student.AllergyMedication !== "ไม่มี") {
-      alertMsg += `⚠️ <b>ประวัติแพ้ยา:</b> ${student.AllergyMedication}\n`;
-    }
-    if (student.CongenitalDisease && student.CongenitalDisease !== "-" && student.CongenitalDisease !== "ไม่มี") {
-      alertMsg += `🩺 <b>โรคประจำตัว:</b> ${student.CongenitalDisease}\n`;
-    }
-    alertMsg += `<b>เวลาแจ้ง:</b> ${dateStr} เวลา ${timeStr} น.`;
-    sendTelegramNotification(alertMsg);
+    const alertMsg = buildCheckinNotificationText_(student, payload, visitId, timestamp, true);
+    sendTelegramNotification(alertMsg, notifyContext);
   } catch (telErr) {
     Logger.log("Telegram notification failed in submitLiffSelfCheckin: " + telErr.message);
+  }
+
+  try {
+    const lineMsg = buildCheckinNotificationText_(student, payload, visitId, timestamp, false);
+    if (payload.lineUserId) {
+      sendLineNotification(lineMsg, payload.lineUserId, notifyContext);
+    }
+    const staffLineId = getBackendConfig("LINE_STAFF_USER_ID", "");
+    if (staffLineId && staffLineId !== payload.lineUserId) {
+      sendLineNotification(lineMsg, staffLineId, notifyContext);
+    }
+  } catch (lineErr) {
+    Logger.log("LINE notification failed in submitLiffSelfCheckin: " + lineErr.message);
   }
 
   return {
@@ -5344,8 +5548,603 @@ function submitLiffSelfCheckin(payload) {
     timeIn: timeStr,
     chiefComplaint: payload.chiefComplaint,
     urgencyLevel: payload.urgencyLevel,
+    treatedAtDepartment: treatedAtDepartment,
+    requestReason: requestReason,
+    notification: buildCheckinNotificationText_(student, payload, visitId, timestamp, false),
     message: "ส่งข้อมูลแจ้งอาการเข้าห้องพยาบาลเรียบร้อยแล้ว"
   };
+}
+
+/**
+ * ==========================================
+ * LINE LIFF: การผูกบัญชี, ความยินยอม และไฟล์ PDF รายคน
+ * ==========================================
+ */
+
+function liffConsentVersion_() { return "1.0"; }
+
+/**
+ * สร้างตาราง LineBindings / ConsentForms แบบ lazy เพื่อให้ใช้งานได้ทั้ง GAS และ Cloudflare
+ */
+function ensureLiffTables_() {
+  const ss = getSpreadsheet();
+  const defs = {
+    "LineBindings": [
+      "LineUserID", "StudentCode", "DisplayName", "PictureURL", "Status",
+      "ConsentVersion", "ConsentAt", "CreatedAt", "UpdatedAt", "Note"
+    ],
+    "ConsentForms": [
+      "ConsentID", "StudentCode", "RecipientID", "RecipientName", "ConsentVersion",
+      "ConsentType", "Accepted", "AcceptedAt", "LineUserID", "SignatureName",
+      "PdfFileId", "PdfUrl", "Details"
+    ]
+  };
+  Object.keys(defs).forEach(function(name) {
+    let sheet = ss.getSheetByName(name);
+    if (!sheet) sheet = ss.insertSheet(name);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(defs[name]);
+      sheet.getRange(1, 1, 1, defs[name].length).setFontWeight("bold").setBackground("#0d9488").setFontColor("#ffffff");
+    }
+  });
+  return ss;
+}
+
+function thaiNameKey_(text) {
+  return String(text || "")
+    .replace(/(นางสาว|นาง|นาย|นพอ\.หญิง|นพอ\.ชาย|นพอ\.|\(ช\)|\(ญ\))/g, "")
+    .replace(/[\s\-_.]/g, "")
+    .toLowerCase();
+}
+
+function recipientFullName_(recipient) {
+  const title = String(recipient.Title || "").replace(/\(.*?\)/g, "").trim();
+  const first = String(recipient.FirstName || "").trim();
+  const last = String(recipient.LastName || "").trim();
+  return (title ? title : "") + first + " " + last;
+}
+
+function findRecipientByStudentCode_(ss, code) {
+  const sheet = ss.getSheetByName("ServiceRecipients");
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const numIdx = headers.indexOf("NumberOrOrder");
+  const recIdx = headers.indexOf("RecipientID");
+  const clean = String(code || "").replace(/\D/g, "");
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][numIdx] || "").replace(/\D/g, "") === clean) {
+      const item = {};
+      headers.forEach(function(h, idx) { item[h] = data[i][idx]; });
+      item._rowIndex = i + 1;
+      return item;
+    }
+  }
+  return null;
+}
+
+function readConsentForStudent_(ss, studentCode, lineUserId) {
+  const sheet = ss.getSheetByName("ConsentForms");
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const codeIdx = headers.indexOf("StudentCode");
+  const userIdx = headers.indexOf("LineUserID");
+  const acceptedIdx = headers.indexOf("Accepted");
+  const dateIdx = headers.indexOf("AcceptedAt");
+  let latest = null;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][codeIdx] || "").replace(/\D/g, "") !== String(studentCode || "").replace(/\D/g, "")) continue;
+    if (lineUserId && userIdx >= 0 && String(data[i][userIdx] || "").trim() !== lineUserId) continue;
+    const accepted = data[i][acceptedIdx] === true || String(data[i][acceptedIdx]).toUpperCase() === "TRUE";
+    if (!accepted) continue;
+    const item = {};
+    headers.forEach(function(h, idx) { item[h] = data[i][idx]; });
+    if (!latest || new Date(item.AcceptedAt).getTime() > new Date(latest.AcceptedAt).getTime()) latest = item;
+  }
+  return latest;
+}
+
+/**
+ * สถานะการผูกบัญชี LINE ของนักเรียน (เรียกผ่าน Cloudflare bridge ซึ่งตรวจ idToken แล้ว)
+ */
+function getLiffBindingStatus(lineUserId, displayName, pictureUrl, boundStudentId) {
+  const ss = ensureLiffTables_();
+  const code = String(boundStudentId || "").replace(/\D/g, "");
+  if (!code) {
+    return { bound: false, lineUserId: lineUserId || "", displayName: displayName || "" };
+  }
+  const recipient = findRecipientByStudentCode_(ss, code);
+  if (!recipient) {
+    return { bound: false, lineUserId: lineUserId || "", displayName: displayName || "" };
+  }
+  const consent = readConsentForStudent_(ss, code, lineUserId || "");
+  return {
+    bound: true,
+    studentCode: code,
+    studentName: recipientFullName_(recipient),
+    group: recipient.Group || "",
+    level: recipient.Level || "",
+    pictureUrl: pictureUrl || "",
+    hasConsent: !!consent,
+    consentVersion: consent ? consent.ConsentVersion : "",
+    consentAt: consent ? consent.AcceptedAt : "",
+    pdfReady: true
+  };
+}
+
+/**
+ * ผูกบัญชี LINE กับรหัสนักเรียน (ครั้งแรก) โดยตรวจชื่อ-นามสกุลให้ตรงกับทะเบียน
+ */
+function bindLiffStudent(payload) {
+  payload = payload || {};
+  const ss = ensureLiffTables_();
+  const code = String(payload.studentCode || "").replace(/\D/g, "");
+  const lineUserId = String(payload.lineUserId || "").trim();
+  const displayName = String(payload.lineDisplayName || payload.displayName || "").trim();
+  const pictureUrl = String(payload.pictureUrl || "").trim();
+  const fullName = String(payload.fullName || "").trim();
+
+  if (!/^\d{7}$/.test(code)) throw new Error("รหัสประจำตัวนักเรียนต้องเป็นตัวเลข 7 หลัก");
+  if (!lineUserId) throw new Error("ไม่พบตัวตน LINE กรุณาเปิดหน้านี้ผ่านแอป LINE");
+  if (!payload.accepted) throw new Error("กรุณายอมรับหนังสือให้ความยินยอมก่อนผูกบัญชี");
+  if (fullName.length < 4) throw new Error("กรุณากรอกชื่อ-นามสกุลให้ตรงกับทะเบียนนักเรียน");
+
+  const recipient = findRecipientByStudentCode_(ss, code);
+  if (!recipient) throw new Error("ไม่พบรหัสประจำตัวนี้ในทะเบียนนักเรียน");
+
+  const nameKey = thaiNameKey_(fullName);
+  const firstKey = thaiNameKey_(recipient.FirstName);
+  const lastKey = thaiNameKey_(recipient.LastName);
+  const sameName = nameKey === (firstKey + lastKey) || (firstKey && lastKey && nameKey.indexOf(firstKey) >= 0 && nameKey.indexOf(lastKey) >= 0);
+  if (!sameName) throw new Error("ชื่อ-นามสกุลไม่ตรงกับทะเบียนนักเรียน กรุณาตรวจสอบอีกครั้ง");
+
+  const sheet = ss.getSheetByName("LineBindings");
+  const rows = sheet.getDataRange().getValues();
+  const userIdx = 0, codeIdx = 1, statusIdx = 4;
+  let existingRow = -1;
+  for (let i = 1; i < rows.length; i++) {
+    const rowUser = String(rows[i][userIdx] || "").trim();
+    const rowCode = String(rows[i][codeIdx] || "").replace(/\D/g, "");
+    const rowStatus = String(rows[i][statusIdx] || "").toUpperCase();
+    if (rowCode === code && rowUser && rowUser !== lineUserId && rowStatus === "APPROVED") {
+      throw new Error("รหัสประจำตัวนี้ผูกกับบัญชี LINE อื่นแล้ว กรุณาติดต่อห้องพยาบาล");
+    }
+    if (rowUser === lineUserId) existingRow = i + 1;
+  }
+
+  const now = new Date();
+  if (existingRow > 0) {
+    sheet.getRange(existingRow, 1, 1, 10).setValues([[
+      lineUserId, code, displayName, pictureUrl, "APPROVED",
+      liffConsentVersion_(), now, rows[existingRow - 1][7] || now, now,
+      "ผูกบัญชีผ่าน LINE LIFF"
+    ]]);
+  } else {
+    sheet.appendRow([
+      lineUserId, code, displayName, pictureUrl, "APPROVED",
+      liffConsentVersion_(), now, now, now, "ผูกบัญชีผ่าน LINE LIFF"
+    ]);
+  }
+
+  const consent = submitLiffConsent({
+    studentCode: code,
+    lineUserId: lineUserId,
+    lineDisplayName: displayName,
+    accepted: true,
+    signatureName: fullName,
+    consentType: "HealthDataProcessing",
+    details: "ยินยอมผ่าน LINE LIFF ครั้งแรก"
+  });
+
+  try {
+    const msg = "🔗 มีการผูกบัญชี LINE LIFF ใหม่\n" +
+      "นพอ.: " + recipientFullName_(recipient) + " (" + code + ")\n" +
+      "LINE: " + (displayName || "-") + "\nเวลา: " +
+      Utilities.formatDate(now, "Asia/Bangkok", "dd/MM/yyyy HH:mm") + " น.";
+    sendTelegramNotification(msg);
+  } catch (notifyErr) {}
+
+  return {
+    success: true,
+    studentCode: code,
+    studentName: recipientFullName_(recipient),
+    group: recipient.Group || "",
+    consentAt: consent.consentAt,
+    consentVersion: consent.consentVersion
+  };
+}
+
+/**
+ * บันทึกความยินยอมในการประมวลผลข้อมูลสุขภาพรายคน
+ */
+function submitLiffConsent(payload) {
+  payload = payload || {};
+  const ss = ensureLiffTables_();
+  const code = String(payload.studentCode || "").replace(/\D/g, "");
+  const lineUserId = String(payload.lineUserId || "").trim();
+  if (!/^\d{7}$/.test(code)) throw new Error("รหัสนักเรียนไม่ถูกต้อง");
+  if (!payload.accepted) throw new Error("กรุณายอมรับหนังสือให้ความยินยอม");
+  const recipient = findRecipientByStudentCode_(ss, code);
+  if (!recipient) throw new Error("ไม่พบข้อมูลนักเรียนในทะเบียน");
+  const version = String(payload.consentVersion || liffConsentVersion_());
+  const existing = readConsentForStudent_(ss, code, lineUserId);
+  if (existing && String(existing.ConsentVersion) === version) {
+    return {
+      success: true, consentId: existing.ConsentID, consentAt: existing.AcceptedAt,
+      consentVersion: existing.ConsentVersion, pdfUrl: existing.PdfUrl || "", reused: true
+    };
+  }
+  const sheet = ss.getSheetByName("ConsentForms");
+  const now = new Date();
+  const id = generateId("CON", "ConsentForms");
+  const studentName = recipientFullName_(recipient);
+  sheet.appendRow([
+    id, code, recipient.RecipientID || "", studentName, version,
+    payload.consentType || "HealthDataProcessing", true, now, lineUserId,
+    String(payload.signatureName || studentName).trim(), "", "",
+    String(payload.details || "").slice(0, 1000)
+  ]);
+  try {
+    sendTelegramNotification(
+      "📝 มีการให้ความยินยอมข้อมูลสุขภาพ\n" + studentName + " (" + code + ")\n" +
+      "เวอร์ชัน: " + version + "\nเวลา: " +
+      Utilities.formatDate(now, "Asia/Bangkok", "dd/MM/yyyy HH:mm") + " น.");
+  } catch (e) {}
+  return { success: true, consentId: id, consentAt: now, consentVersion: version, pdfUrl: "" };
+}
+
+/**
+ * ดึงแฟ้มประวัติของนักเรียนเอง (เฉพาะรหัสที่ผูกกับ LINE แล้วเท่านั้น)
+ */
+function getMyLiffProfile(studentCode) {
+  const ss = ensureLiffTables_();
+  const recipient = findRecipientByStudentCode_(ss, studentCode);
+  if (!recipient) throw new Error("ไม่พบข้อมูลนักเรียนในทะเบียน");
+  const profile = buildServiceRecipientProfile_(recipient.RecipientID || studentCode, false);
+  const consent = readConsentForStudent_(ss, studentCode, "");
+  profile.liff = {
+    studentCode: String(recipient.NumberOrOrder || studentCode),
+    studentName: recipientFullName_(recipient),
+    hasConsent: !!consent,
+    consentAt: consent ? consent.AcceptedAt : "",
+    consentVersion: consent ? consent.ConsentVersion : ""
+  };
+  return profile;
+}
+
+/**
+ * สร้างไฟล์ PDF แฟ้มประวัติสุขภาพรายคนแบบละเอียด
+ */
+function requestStudentPdf(studentCode) {
+  const ss = ensureLiffTables_();
+  const recipient = findRecipientByStudentCode_(ss, studentCode);
+  if (!recipient) throw new Error("ไม่พบข้อมูลนักเรียนในทะเบียน");
+  const profile = buildServiceRecipientProfile_(recipient.RecipientID || studentCode, false);
+  const consent = readConsentForStudent_(ss, studentCode, "");
+  return renderStudentProfilePdf_(profile, consent);
+}
+
+function requestStudentConsentPdf(studentCode) {
+  const ss = ensureLiffTables_();
+  const recipient = findRecipientByStudentCode_(ss, studentCode);
+  if (!recipient) throw new Error("ไม่พบข้อมูลนักเรียนในทะเบียน");
+  const profile = buildServiceRecipientProfile_(recipient.RecipientID || studentCode, false);
+  const consent = readConsentForStudent_(ss, studentCode, "");
+  return renderConsentPdf_(profile, consent);
+}
+
+function exportStudentPdf(sessionToken, recipientId) {
+  const session = validateSession(sessionToken);
+  const profile = buildServiceRecipientProfile_(recipientId, session.role === "DEMO");
+  const consent = readConsentForStudent_(getSpreadsheet(), String(profile.NumberOrOrder || ""), "");
+  return renderStudentProfilePdf_(profile, consent);
+}
+
+/**
+ * ตรวจสอบความพร้อมของสิทธิ์สร้าง PDF (สำหรับผู้ดูแลระบบ)
+ * สร้างเอกสารชั่วคราวหนึ่งไฟล์แล้วลบทิ้ง เพื่อยืนยันว่า DocumentApp/DriveApp ใช้งานได้
+ */
+function pdfHealthCheck(sessionToken) {
+  const session = validateSession(sessionToken);
+  if (!["ADMIN", "MEDICAL"].includes(session.role)) throw new Error("สิทธิ์ไม่เพียงพอ");
+  try {
+    const doc = DocumentApp.create("RTAFNC PDF health check " + Date.now());
+    doc.getBody().appendParagraph("PDF authorization OK");
+    doc.saveAndClose();
+    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (e) {}
+    const folder = studentPdfFolder_();
+    return { ok: true, folderName: folder.getName(), folderUrl: folder.getUrl() };
+  } catch (error) {
+    return { ok: false, error: String((error && error.message) || error) };
+  }
+}
+
+function exportStudentConsentPdf(sessionToken, recipientId) {
+  const session = validateSession(sessionToken);
+  const profile = buildServiceRecipientProfile_(recipientId, session.role === "DEMO");
+  const consent = readConsentForStudent_(getSpreadsheet(), String(profile.NumberOrOrder || ""), "");
+  return renderConsentPdf_(profile, consent);
+}
+
+function studentPdfFolder_() {
+  const rootId = getBackendConfig("MEDICAL_FOLDER_ID", "1xVNYLtI1eoAx6hWEYzolqCaGBhXOBfbw");
+  let root;
+  try { root = DriveApp.getFolderById(rootId); } catch (e) { root = DriveApp.getRootFolder(); }
+  const name = "แฟ้มประวัติสุขภาพ PDF";
+  const folders = root.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : root.createFolder(name);
+}
+
+function pdfDate_(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return Utilities.formatDate(d, "Asia/Bangkok", "dd/MM/yyyy");
+}
+
+function pdfValue_(value) {
+  const text = value === null || value === undefined ? "" : String(value).trim();
+  return text && text !== "-" ? text : "-";
+}
+
+function saveDocAsPdf_(doc, fileName) {
+  const folder = studentPdfFolder_();
+  const pdfBlob = doc.getAs("application/pdf").setName(fileName);
+  const file = folder.createFile(pdfBlob);
+  try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (e) {}
+  return {
+    success: true,
+    fileId: file.getId(),
+    fileName: fileName,
+    url: "https://drive.google.com/file/d/" + file.getId() + "/view",
+    downloadUrl: "https://drive.google.com/uc?export=download&id=" + file.getId()
+  };
+}
+
+function appendPdfTable_(body, headers, rows) {
+  const data = [headers].concat(rows.length ? rows : [headers.map(function() { return "-"; })]);
+  const table = body.appendTable(data);
+  table.setBorderColor("#cbd5e1");
+  for (let r = 0; r < data.length; r++) {
+    for (let c = 0; c < headers.length; c++) {
+      const cell = table.getCell(r, c);
+      cell.setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(6).setPaddingRight(6);
+      if (r === 0) {
+        cell.setBackgroundColor("#0d9488");
+        cell.editAsText().setForegroundColor("#ffffff").setBold(true);
+      }
+    }
+  }
+  return table;
+}
+
+function renderStudentProfilePdf_(profile, consent) {
+  const name = recipientFullName_(profile);
+  const code = String(profile.NumberOrOrder || profile.RecipientID || "").trim();
+  const now = new Date();
+  const stamp = Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmm");
+  const doc = DocumentApp.create("แฟ้มประวัติ_" + code + "_" + stamp);
+  const body = doc.getBody();
+  body.setMarginTop(36).setMarginBottom(36).setMarginLeft(40).setMarginRight(40);
+
+  const title = body.appendParagraph("แฟ้มประวัติสุขภาพนักเรียนพยาบาล");
+  title.setAlignment(DocumentApp.HorizontalAlignment.CENTER).setBold(true).setFontSize(18).setForegroundColor("#082444");
+  const sub = body.appendParagraph("วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ");
+  sub.setAlignment(DocumentApp.HorizontalAlignment.CENTER).setFontSize(11).setForegroundColor("#005696");
+  body.appendParagraph("พิมพ์เมื่อ " + Utilities.formatDate(now, "Asia/Bangkok", "dd/MM/yyyy HH:mm") + " น.")
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setFontSize(9).setForegroundColor("#64748b");
+
+  body.appendParagraph("1. ข้อมูลส่วนบุคคล").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["รายการ", "ข้อมูล"], [
+    ["ชื่อ-นามสกุล", name],
+    ["รหัสประจำตัว", code],
+    ["ชั้นปี / ตอน", pdfValue_((profile.Group || "") + " " + (profile.SubUnit || ""))],
+    ["รุ่น / ระดับ", pdfValue_(profile.Level)],
+    ["หมู่เลือด", pdfValue_(profile.BloodType)],
+    ["น้ำหนัก / ส่วนสูง", pdfValue_(profile.Weight) + " กก. / " + pdfValue_(profile.Height) + " ซม."],
+    ["โรคประจำตัว", pdfValue_(profile.CongenitalDiseases)],
+    ["ประวัติแพ้ยา", pdfValue_(profile.DrugAllergies)],
+    ["แพ้อาหาร/อื่น ๆ", pdfValue_((profile.FoodAllergies || "") + " " + (profile.OtherAllergies || ""))],
+    ["ยาประจำตัว", pdfValue_(profile.RegularMedicines)],
+    ["โรงพยาบาลประจำ", pdfValue_(profile.RegularHospital)],
+    ["ผู้ติดต่อฉุกเฉิน", pdfValue_(profile.EmergencyContact || profile.ContactName) + " " + pdfValue_(profile.EmergencyPhone || profile.ContactPhone)]
+  ]);
+
+  const s = profile.summary || {};
+  body.appendParagraph("2. สรุปภาพรวม").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["การเจ็บป่วย", "วัคซีน", "ใบรับรองแพทย์", "ใบนัดติดตาม", "เอกสารแนบ"], [[
+    String(s.totalVisits || 0), String(s.totalVaccinations || 0), String(s.totalCertificates || 0),
+    String(s.totalFollowUps || 0), String(s.totalDocuments || 0)
+  ]]);
+
+  body.appendParagraph("3. ประวัติการเข้ารับบริการ").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["วันที่", "อาการสำคัญ", "วินิจฉัย", "การรักษา", "ผลลัพธ์", "ความเร่งด่วน"],
+    (profile.visits || []).map(function(v) {
+      return [pdfDate_(v.VisitDate), pdfValue_(v.ChiefComplaint), pdfValue_(v.Diagnosis),
+        pdfValue_(v.TreatmentDetails), pdfValue_(v.Outcome), pdfValue_(v.UrgencyLevel)];
+    }));
+
+  body.appendParagraph("4. ประวัติการได้รับวัคซีน").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["วันที่", "วัคซีน", "เข็มที่", "สถานที่/ผู้ให้", "หมายเหตุ"],
+    (profile.vaccinations || []).map(function(v) {
+      return [pdfDate_(v.VaccinationDate), pdfValue_(v.VaccineName), pdfValue_(v.DoseNumber),
+        pdfValue_(v.AdministeredBy || v.Site), pdfValue_(v.Note)];
+    }));
+
+  body.appendParagraph("5. ใบรับรองแพทย์ / ใบลา").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["วันที่ออก", "โรงพยาบาล", "การวินิจฉัย", "แพทย์", "หมายเหตุ"],
+    (profile.certificates || []).map(function(v) {
+      return [pdfDate_(v.IssueDate), pdfValue_(v.Hospital), pdfValue_(v.Diagnosis),
+        pdfValue_(v.Doctor), pdfValue_(v.Note)];
+    }));
+
+  body.appendParagraph("6. เอกสารแนบรายคน").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  const docs = (profile.studentDocuments || []).concat(profile.documents || []);
+  appendPdfTable_(body, ["ประเภท", "ชื่อไฟล์", "วันที่", "ลิงก์"],
+    docs.map(function(v) {
+      return [pdfValue_(v.DocType || "เอกสาร"), pdfValue_(v.FileName), pdfDate_(v.RecordedAt || v.UploadedAt), pdfValue_(v.FileUrl)];
+    }));
+
+  body.appendParagraph("7. ความยินยอมและลายมือชื่อ").setBold(true).setFontSize(13).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["รายการ", "ข้อมูล"], [
+    ["สถานะความยินยอม", consent ? "ยินยอมแล้ว" : "ยังไม่บันทึก"],
+    ["เวอร์ชัน", consent ? pdfValue_(consent.ConsentVersion) : "-"],
+    ["วันที่ยินยอม", consent ? pdfDate_(consent.AcceptedAt) : "-"],
+    ["ผู้ให้ความยินยอม", consent ? pdfValue_(consent.SignatureName) : "-"]
+  ]);
+
+  body.appendParagraph("\n\nลงชื่อ ......................................................").setFontSize(10);
+  body.appendParagraph("( " + name + " )").setFontSize(10);
+  body.appendParagraph("ผู้รับบริการ / เจ้าของข้อมูลสุขภาพ").setFontSize(9).setForegroundColor("#64748b");
+
+  doc.saveAndClose();
+  const safeName = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_");
+  return saveDocAsPdf_(doc, "แฟ้มประวัติ_" + code + "_" + safeName + "_" + stamp + ".pdf");
+}
+
+function renderConsentPdf_(profile, consent) {
+  const name = recipientFullName_(profile);
+  const code = String(profile.NumberOrOrder || profile.RecipientID || "").trim();
+  const now = new Date();
+  const stamp = Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmm");
+  const doc = DocumentApp.create("หนังสือยินยอม_" + code + "_" + stamp);
+  const body = doc.getBody();
+  body.setMarginTop(40).setMarginBottom(40).setMarginLeft(50).setMarginRight(50);
+
+  body.appendParagraph("หนังสือให้ความยินยอมการประมวลผลข้อมูลสุขภาพส่วนบุคคล")
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setBold(true).setFontSize(16).setForegroundColor("#082444");
+  body.appendParagraph("(ฉบับสำหรับนักเรียนพยาบาลทหารอากาศ)  เวอร์ชัน " + (consent ? consent.ConsentVersion : liffConsentVersion_()))
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setFontSize(10).setForegroundColor("#005696");
+  body.appendParagraph("");
+
+  body.appendParagraph("ผู้ให้ความยินยอม").setBold(true).setFontSize(12).setForegroundColor("#0d9488");
+  appendPdfTable_(body, ["รายการ", "ข้อมูล"], [
+    ["ชื่อ-นามสกุล", name],
+    ["รหัสประจำตัว", code],
+    ["ชั้นปี / ตอน", pdfValue_((profile.Group || "") + " " + (profile.SubUnit || ""))],
+    ["รุ่น / ระดับ", pdfValue_(profile.Level)]
+  ]);
+
+  body.appendParagraph("ข้อความให้ความยินยอม").setBold(true).setFontSize(12).setForegroundColor("#0d9488");
+  const clauses = [
+    "1. ข้าพเจ้ายินยอมให้วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ เก็บรวบรวม ใช้ และเปิดเผยข้อมูลสุขภาพของข้าพเจ้า เพื่อการบริบาลสุขภาพ การป้องกันโรค การรักษาพยาบาล และการติดตามอาการ ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562",
+    "2. ข้อมูลที่ประมวลผล ได้แก่ ข้อมูลส่วนบุคคล ประวัติการเจ็บป่วย วัคซีน ใบรับรองแพทย์ เอกสารแนบ และข้อมูลสุขภาพอื่นที่เกี่ยวข้อง",
+    "3. ข้าพเจ้ามีสิทธิ์เข้าถึง ขอสำเนา แก้ไข ลบ หรือถอนความยินยอมได้ โดยแจ้งต่อห้องพยาบาลหรือเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลของหน่วยงาน",
+    "4. การถอนความยินยอมไม่ส่งผลกระทบต่อการดำเนินการที่ได้ทำไปแล้วตามกฎหมาย และอาจทำให้หน่วยงานไม่สามารถให้บริการสุขภาพบางส่วนได้",
+    "5. ข้าพเจ้าได้รับทราบวัตถุประสงค์ ระยะเวลาเก็บรักษา และช่องทางติดต่อของหน่วยงานแล้ว"
+  ];
+  clauses.forEach(function(text) {
+    body.appendParagraph(text).setFontSize(10.5).setSpacingAfter(6);
+  });
+
+  body.appendParagraph("");
+  appendPdfTable_(body, ["รายการ", "ข้อมูล"], [
+    ["สถานะ", consent ? "ยินยอมแล้ว" : "ยังไม่บันทึกในระบบ"],
+    ["วันที่ให้ความยินยอม", consent ? pdfDate_(consent.AcceptedAt) : "-"],
+    ["ช่องทาง", consent && consent.LineUserID ? "LINE LIFF" : "-"],
+    ["ผู้บันทึก", consent ? pdfValue_(consent.SignatureName) : "-"]
+  ]);
+
+  body.appendParagraph("\n\nลงชื่อ ......................................................").setFontSize(10);
+  body.appendParagraph("( " + name + " )").setFontSize(10);
+  body.appendParagraph("วันที่ " + Utilities.formatDate(now, "Asia/Bangkok", "dd/MM/yyyy")).setFontSize(10);
+  body.appendParagraph("\nลงชื่อ ......................................................").setFontSize(10);
+  body.appendParagraph("( เจ้าหน้าที่พยาบาล / ผู้รับผิดชอบข้อมูล )").setFontSize(9).setForegroundColor("#64748b");
+
+  doc.saveAndClose();
+  const safeName = name.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_");
+  return saveDocAsPdf_(doc, "หนังสือยินยอม_" + code + "_" + safeName + "_" + stamp + ".pdf");
+}
+
+/**
+ * จัดการรายการผูกบัญชี LINE (สำหรับเจ้าหน้าที่)
+ */
+function getLineBindings(sessionToken) {
+  const session = validateSession(sessionToken);
+  if (!["ADMIN", "MEDICAL"].includes(session.role)) throw new Error("สิทธิ์ไม่เพียงพอ");
+  const ss = ensureLiffTables_();
+  const sheet = ss.getSheetByName("LineBindings");
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  return data.slice(1).map(function(row) {
+    const item = {};
+    headers.forEach(function(h, idx) { item[h] = row[idx]; });
+    return item;
+  });
+}
+
+function saveLineBinding(sessionToken, payload) {
+  const session = validateSession(sessionToken);
+  if (!["ADMIN", "MEDICAL"].includes(session.role)) throw new Error("สิทธิ์ไม่เพียงพอ");
+  const ss = ensureLiffTables_();
+  const lineUserId = String((payload && payload.lineUserId) || "").trim();
+  const code = String((payload && payload.studentCode) || "").replace(/\D/g, "");
+  if (!lineUserId) throw new Error("กรุณาระบุ LINE User ID");
+  if (!/^\d{7}$/.test(code)) throw new Error("รหัสนักเรียนต้องเป็นตัวเลข 7 หลัก");
+  const recipient = findRecipientByStudentCode_(ss, code);
+  if (!recipient) throw new Error("ไม่พบรหัสนักเรียนนี้");
+  const sheet = ss.getSheetByName("LineBindings");
+  const rows = sheet.getDataRange().getValues();
+  const now = new Date();
+  let updated = false;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || "").trim() === lineUserId) {
+      sheet.getRange(i + 1, 1, 1, 10).setValues([[
+        lineUserId, code, (payload && payload.displayName) || rows[i][2] || "",
+        (payload && payload.pictureUrl) || rows[i][3] || "",
+        (payload && payload.status) || "APPROVED",
+        liffConsentVersion_(), now, rows[i][7] || now, now,
+        (payload && payload.note) || "เจ้าหน้าที่อนุมัติ"
+      ]]);
+      updated = true;
+      break;
+    }
+  }
+  if (!updated) {
+    sheet.appendRow([
+      lineUserId, code, (payload && payload.displayName) || "", (payload && payload.pictureUrl) || "",
+      (payload && payload.status) || "APPROVED", liffConsentVersion_(), now, now, now,
+      (payload && payload.note) || "เจ้าหน้าที่เพิ่มรายการ"
+    ]);
+  }
+  return { success: true, message: "บันทึกการผูกบัญชี LINE เรียบร้อยแล้ว" };
+}
+
+function revokeLineBinding(sessionToken, lineUserId) {
+  const session = validateSession(sessionToken);
+  if (!["ADMIN", "MEDICAL"].includes(session.role)) throw new Error("สิทธิ์ไม่เพียงพอ");
+  const ss = ensureLiffTables_();
+  const sheet = ss.getSheetByName("LineBindings");
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || "").trim() === String(lineUserId || "").trim()) {
+      sheet.getRange(i + 1, 5).setValue("REVOKED");
+      sheet.getRange(i + 1, 9).setValue(new Date());
+      return { success: true };
+    }
+  }
+  throw new Error("ไม่พบรายการผูกบัญชีนี้");
+}
+
+function getConsentForms(sessionToken, filters) {
+  const session = validateSession(sessionToken);
+  if (!["ADMIN", "MEDICAL"].includes(session.role)) throw new Error("สิทธิ์ไม่เพียงพอ");
+  const ss = ensureLiffTables_();
+  const sheet = ss.getSheetByName("ConsentForms");
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const codeIdx = headers.indexOf("StudentCode");
+  const search = String((filters && filters.search) || "").replace(/\D/g, "");
+  return data.slice(1).reverse().filter(function(row) {
+    return !search || String(row[codeIdx] || "").replace(/\D/g, "").indexOf(search) >= 0;
+  }).slice(0, 1000).map(function(row) {
+    const item = {};
+    headers.forEach(function(h, idx) { item[h] = row[idx]; });
+    return item;
+  });
 }
 
 /**

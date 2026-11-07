@@ -7,11 +7,12 @@
       return async (...args) => {
         try {
           let idToken;
-          if (['lookupStudentByStudentId', 'submitLiffSelfCheckin'].includes(method)) {
+          const studentMethods = ['lookupStudentByStudentId', 'submitLiffSelfCheckin', 'getLiffBindingStatus',
+            'bindLiffStudent', 'submitLiffConsent', 'getMyLiffProfile', 'requestStudentPdf',
+            'requestStudentConsentPdf'];
+          if (studentMethods.includes(method)) {
             if (window.liff && typeof liff.isLoggedIn === 'function' && liff.isLoggedIn()) {
               idToken = liff.getIDToken();
-            } else if (window.appState && window.appState.sessionToken) {
-              // อนุญาตให้เจ้าหน้าที่ดูข้อมูลในโหมดพรีวิวได้
             } else {
               throw new Error('กรุณาเข้าสู่ระบบ LINE ก่อนใช้งาน');
             }

@@ -105,23 +105,81 @@
     </div>
 
     <!-- LIFF Navigation Tabs -->
-    <nav class="liff-tabs">
+    <nav class="liff-tabs liff-bottom-nav">
       <button type="button" class="liff-tab-btn active" data-liff-tab="lookup" onclick="switchLiffTab('lookup')">
-        <i class="fas fa-id-card"></i> ข้อมูลสุขภาพ นพอ.
+        <i class="fas fa-house"></i><span>หน้าแรก</span>
       </button>
-      <button type="button" class="liff-tab-btn" data-liff-tab="checkin" onclick="switchLiffTab('checkin')">
-        <i class="fas fa-stethoscope"></i> แจ้งอาการป่วย / ขอรับบริการ
+      <button type="button" class="liff-tab-btn liff-tab-primary" data-liff-tab="checkin" onclick="switchLiffTab('checkin')">
+        <span class="liff-tab-fab"><i class="fas fa-stethoscope"></i></span><span>แจ้งอาการ</span>
       </button>
       <button type="button" class="liff-tab-btn" data-liff-tab="card" onclick="switchLiffTab('card')">
-        <i class="fas fa-qrcode"></i> บัตรสุขภาพดิจิทัล
+        <i class="fas fa-qrcode"></i><span>บัตรสุขภาพ</span>
       </button>
     </nav>
 
     <!-- Tab 1: ค้นหาข้อมูลสุขภาพด้วยรหัส 7 หลัก -->
     <section id="liffTabLookup" class="liff-tab-content active">
-      <div class="liff-card">
+      <!-- Hero: Premium personal health space -->
+      <div class="liff-hero">
+        <div class="liff-hero-top">
+          <div>
+            <span class="liff-hero-eyebrow"><i class="fas fa-shield-alt"></i> RTAFNC HEALTH · MY SPACE</span>
+            <h2 class="liff-hero-title" id="liffHeroTitle">สวัสดี นพอ.</h2>
+            <p class="liff-hero-sub" id="liffHeroSub">พื้นที่สุขภาพส่วนตัวของคุณ ปลอดภัย เป็นความลับ และเห็นได้เฉพาะเจ้าของข้อมูล</p>
+          </div>
+          <div class="liff-hero-avatar"><i class="fas fa-heartbeat"></i></div>
+        </div>
+        <div class="liff-hero-chips">
+          <span class="liff-hero-chip"><i class="fas fa-user-lock"></i> เห็นเฉพาะข้อมูลตนเอง</span>
+          <span class="liff-hero-chip"><i class="fas fa-certificate"></i> ยืนยันตัวตนผ่าน LINE</span>
+        </div>
+        <div class="liff-hero-glow"></div>
+      </div>
+
+      <!-- Web preview notice (not opened inside LINE) -->
+      <div id="liffWebNotice" class="liff-web-notice" style="display:none;">
+        <i class="fas fa-mobile-alt"></i>
+        <div>
+          <strong>เปิดผ่านแอป LINE เพื่อยืนยันตัวตน</strong>
+          <p>หน้านี้แสดงตัวอย่างได้ แต่การเข้าถึงแฟ้มสุขภาพรายคนต้องเปิดจากลิงก์ LIFF ในแอป LINE</p>
+        </div>
+      </div>
+
+      <!-- First-time LINE binding -->
+      <div id="liffBindingCard" class="liff-card liff-bind-card" style="display:none;">
         <div class="liff-card-header">
-          <i class="fas fa-search-plus text-primary"></i>
+          <span class="liff-card-icon mint"><i class="fas fa-link"></i></span>
+          <div>
+            <h3 class="liff-card-title">ผูกบัญชี LINE กับรหัสนักเรียน</h3>
+            <p class="liff-card-desc">ทำครั้งเดียว เพื่อให้ระบบแสดงเฉพาะแฟ้มสุขภาพของคุณ</p>
+          </div>
+        </div>
+        <form id="liffBindForm" onsubmit="handleLiffBind(event)">
+          <div class="liff-field">
+            <label class="liff-label" for="liffBindStudentId"><i class="fas fa-id-badge"></i> รหัสประจำตัว นพอ. 7 หลัก</label>
+            <input type="tel" id="liffBindStudentId" class="liff-input-id" placeholder="เช่น 6903946"
+                   maxlength="7" pattern="[0-9]{7}" inputmode="numeric" autocomplete="off" required>
+          </div>
+          <div class="liff-field">
+            <label class="liff-label" for="liffBindFullName"><i class="fas fa-user-check"></i> ชื่อ-นามสกุลจริง (ไม่ต้องมีคำนำหน้า)</label>
+            <input type="text" id="liffBindFullName" class="form-control liff-text-input"
+                   placeholder="เช่น กนกนุช อาจคำไพร" autocomplete="off" required>
+          </div>
+          <label class="liff-consent-check">
+            <input type="checkbox" id="liffBindConsent" required>
+            <span>ข้าพเจ้ายอมรับ <button type="button" class="liff-link-btn" onclick="showLiffConsentDetail()">หนังสือให้ความยินยอมประมวลผลข้อมูลสุขภาพ</button> และยืนยันว่าข้อมูลนี้เป็นของข้าพเจ้า</span>
+          </label>
+          <div id="liffBindError" class="liff-inline-error" style="display:none;"></div>
+          <button type="submit" id="liffBindSubmitBtn" class="liff-btn-primary">
+            <i class="fas fa-lock-open"></i> ผูกบัญชีและเปิดแฟ้มของฉัน
+          </button>
+        </form>
+        <p class="liff-fineprint"><i class="fas fa-shield-alt"></i> ระบบตรวจสอบรหัสและชื่อ-นามสกุลกับทะเบียนก่อนอนุมัติ และบันทึกความยินยอมรายคน</p>
+      </div>
+
+      <div class="liff-card" id="liffLookupCard" style="display:none;">
+        <div class="liff-card-header">
+          <span class="liff-card-icon blue"><i class="fas fa-search-plus"></i></span>
           <div>
             <h3 class="liff-card-title">ตรวจสอบข้อมูลเวชระเบียน นพอ.</h3>
             <p class="liff-card-desc">กรอกรหัสประจำตัวนักเรียนพยาบาลทหารอากาศ 7 หลัก</p>
@@ -150,6 +208,9 @@
         <!-- ผลลัพธ์ข้อมูลสุขภาพนักเรียน -->
         <div id="liffStudentResult" style="display: none;" class="mt-3"></div>
       </div>
+
+      <!-- แฟ้มสุขภาพส่วนตัวของนักเรียนที่ผูกบัญชีแล้ว -->
+      <div id="liffOwnProfile" class="liff-own-profile" style="display:none;"></div>
     </section>
 
     <!-- Tab 2: แจ้งอาการป่วย / ขอรับบริการห้องพยาบาล -->
@@ -212,7 +273,12 @@
             <textarea id="liffIncidentDetails" class="form-control" rows="2" placeholder="ระบุอาการเพิ่มเติม เช่น เริ่มเป็นเมื่อเช้า, ทานยาพาราแล้วไม่ดีขึ้น..."></textarea>
           </div>
 
-          <button type="submit" id="liffCheckinSubmitBtn" class="btn btn-primary btn-block py-2 font-weight-bold">
+          <div id="liffCheckinConsentNote" class="liff-consent-inline">
+            <i class="fas fa-shield-alt"></i>
+            <span>ข้อมูลอาการจะส่งถึงพยาบาลเวรทาง Telegram และ LINE ทันที และบันทึกไว้ในแฟ้มสุขภาพของคุณ</span>
+          </div>
+
+          <button type="submit" id="liffCheckinSubmitBtn" class="liff-btn-primary">
             <i class="fas fa-paper-plane"></i> ส่งข้อมูลแจ้งอาการเข้าห้องพยาบาล
           </button>
         </form>
@@ -233,6 +299,26 @@
         </div>
       </div>
     </section>
+
+    <!-- Consent detail modal -->
+    <div id="liffConsentModal" class="liff-consent-modal" style="display:none;" onclick="if(event.target===this)closeLiffConsentDetail()">
+      <div class="liff-consent-sheet">
+        <div class="liff-consent-sheet-head">
+          <div>
+            <span class="liff-hero-eyebrow">PDPA · CONSENT</span>
+            <h3>หนังสือให้ความยินยอมประมวลผลข้อมูลสุขภาพ</h3>
+          </div>
+          <button type="button" class="liff-btn-icon dark" onclick="closeLiffConsentDetail()"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="liff-consent-body">
+          <p>ข้าพเจ้ายินยอมให้วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ เก็บรวบรวม ใช้ และเปิดเผยข้อมูลสุขภาพของข้าพเจ้า เพื่อการบริบาลสุขภาพ การป้องกันโรค การรักษาพยาบาล และการติดตามอาการ ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562</p>
+          <p>ข้อมูลที่ประมวลผล ได้แก่ ข้อมูลส่วนบุคคล ประวัติการเจ็บป่วย วัคซีน ใบรับรองแพทย์ เอกสารแนบ และข้อมูลสุขภาพอื่นที่เกี่ยวข้อง</p>
+          <p>ข้าพเจ้ามีสิทธิ์เข้าถึง ขอสำเนา แก้ไข ลบ หรือถอนความยินยอมได้ โดยแจ้งต่อห้องพยาบาลหรือเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลของหน่วยงาน</p>
+          <p>ระบบจะแสดงข้อมูลสุขภาพเฉพาะบัญชี LINE ที่ผูกกับรหัสนักเรียนของข้าพเจ้าเท่านั้น และบันทึกวันเวลา/เวอร์ชันความยินยอมไว้ในแฟ้มรายคน</p>
+        </div>
+        <button type="button" class="liff-btn-primary" onclick="closeLiffConsentDetail()"><i class="fas fa-check"></i> รับทราบ</button>
+      </div>
+    </div>
 
     <!-- LIFF Footer -->
     <footer class="liff-footer">
@@ -604,7 +690,7 @@
         <div id="recipientsPage" class="page-view" style="display: none;">
           <div class="card">
             <div class="card-header">
-              <h3 class="card-title" data-label-recipient><i class="fas fa-address-card"></i> ทะเบียนผู้รับบริการสุขภาพ</h3>
+              <h3 class="card-title"><i class="fas fa-address-card"></i> <span data-label-recipient>ทะเบียนผู้รับบริการสุขภาพ</span></h3>
               <button class="btn btn-primary" onclick="openNewRecipientModal()">
                 <i class="fas fa-user-plus"></i> <span data-label-recipient>เพิ่มผู้รับบริการใหม่</span>
               </button>
@@ -1273,7 +1359,7 @@
             <div style="font-size:0.95rem; line-height:1.8;">
               <div><strong>ชื่อ-นามสกุล:</strong> <span id="profFullName">-</span></div>
               <div><strong>ประเภทผู้รับบริการ:</strong> <span id="profType">-</span></div>
-              <div data-label-group><strong>กลุ่ม/ระดับ:</strong> <span id="profGroup">-</span></div>
+              <div><strong data-label-group>กลุ่ม/ระดับ:</strong> <span id="profGroup">-</span></div>
               <div><strong>หน่วยงานย่อย:</strong> <span id="profSubUnit">-</span></div>
               <div><strong>อายุสะสม:</strong> <span id="profAge">-</span></div>
               <div><strong>กรุ๊ปเลือด:</strong> <span id="profBlood">-</span></div>
@@ -1283,7 +1369,7 @@
           <div class="col-md-5">
             <h5 class="section-title mb-2">การติดต่อเหตุการณ์ฉุกเฉิน</h5>
             <div style="font-size:0.925rem; line-height:1.8;">
-              <div data-label-contact><strong>ผู้ติดต่อหลัก:</strong> <span id="profContact">-</span></div>
+              <div><strong data-label-contact>ผู้ติดต่อหลัก:</strong> <span id="profContact">-</span></div>
               <div><strong>กรณีฉุกเฉินสำรอง:</strong> <span id="profEmergency">-</span></div>
             </div>
           </div>
@@ -1401,7 +1487,9 @@
         </div>
 
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="flex-wrap:wrap;gap:8px;">
+        <button class="btn btn-primary" onclick="downloadProfilePdf()"><i class="fas fa-file-pdf"></i> ดาวน์โหลด PDF แฟ้มประวัติ</button>
+        <button class="btn btn-outline" onclick="downloadConsentPdf()"><i class="fas fa-file-signature"></i> หนังสือยินยอม PDF</button>
         <button class="btn btn-outline" onclick="printProfileFile()"><i class="fas fa-print"></i> พิมพ์แฟ้มประวัติ</button>
         <button class="btn btn-secondary" onclick="closeModal('profileModal')">ปิดหน้าต่าง</button>
       </div>
@@ -1656,8 +1744,8 @@
         <div class="row mb-3">
           <div class="col-md-6">
             <div><strong>วันที่รับบริการ:</strong> <span id="detVisitDate">-</span></div>
-            <div data-label-recipient><strong>ผู้รับบริการ:</strong> <span id="detRecipient">-</span></div>
-            <div data-label-group><strong>กลุ่ม/ระดับ:</strong> <span id="detGroup">-</span></div>
+            <div><strong data-label-recipient>ผู้รับบริการ:</strong> <span id="detRecipient">-</span></div>
+            <div><strong data-label-group>กลุ่ม/ระดับ:</strong> <span id="detGroup">-</span></div>
           </div>
           <div class="col-md-6">
             <div><strong>ผู้ประเมินบันทึก:</strong> <span id="detRecordedBy">-</span></div>

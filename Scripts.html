@@ -685,6 +685,141 @@ function getOutcomeBadge(outcome) {
 /**
  * ดึงและแสดงรายการผู้รับบริการ (แสดงผลทันทีด้วย DocumentFragment/Batch HTML)
  */
+let currentQuickRecipientFilter = 'all';
+
+function setQuickRecipientFilter(filterType) {
+  currentQuickRecipientFilter = filterType;
+  document.querySelectorAll('#recipientQuickChips .quick-chip').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-filter') === filterType);
+  });
+  renderFilteredRecipients();
+}
+
+function updateQuickRecipientChips(list) {
+  if (!list) list = [];
+  const cAll = list.length;
+  let cSick = 0;
+  let cAllergy = 0;
+  let cChronic = 0;
+  let cY1 = 0, cY2 = 0, cY3 = 0, cY4 = 0;
+
+  list.forEach(r => {
+    const num = String(r.NumberOrOrder || '');
+    const grp = String(r.Group || '') + ' ' + String(r.Level || '');
+    
+    // Cohorts
+    if (num.startsWith('69') || grp.includes('ปีที่ 1') || grp.includes('รุ่น 69') || grp.includes('รุ่นที่ 69')) cY1++;
+    else if (num.startsWith('68') || grp.includes('ปีที่ 2') || grp.includes('รุ่น 68') || grp.includes('รุ่นที่ 68')) cY2++;
+    else if (num.startsWith('67') || grp.includes('ปีที่ 3') || grp.includes('รุ่น 67') || grp.includes('รุ่นที่ 67')) cY3++;
+    else if (num.startsWith('66') || grp.includes('ปีที่ 4') || grp.includes('รุ่น 66') || grp.includes('รุ่นที่ 66')) cY4++;
+
+    // Allergy
+    const da = String(r.DrugAllergies || r.AllergyMedication || '').trim();
+    const fa = String(r.FoodAllergies || '').trim();
+    const oa = String(r.OtherAllergies || '').trim();
+    const hasAllergy = (da && da !== '-') || (fa && fa !== '-') || (oa && oa !== '-');
+    if (hasAllergy) cAllergy++;
+
+    // Chronic
+    const cd = String(r.CongenitalDiseases || '').trim();
+    if (cd && cd !== '-') cChronic++;
+
+    // Sick / under treatment
+    const note = String(r.Note || '') + ' ' + String(r.HealthConstraints || '');
+    const isSick = /ป่วย|รักษา|งดฝึก|พัก|admit|รพ|ตรวจ/i.test(note) || (r.VisitsCount && r.VisitsCount > 0) || r.HasActiveSick;
+    if (isSick) cSick++;
+  });
+
+  const setC = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
+  setC('chipCountAll', cAll);
+  setC('chipCountSick', cSick);
+  setC('chipCountAllergy', cAllergy);
+  setC('chipCountChronic', cChronic);
+  setC('chipCountY1', cY1);
+  setC('chipCountY2', cY2);
+  setC('chipCountY3', cY3);
+  setC('chipCountY4', cY4);
+}
+
+function renderFilteredRecipients() {
+  const fullList = appState.rawRecipientsList || [];
+  const tbody = document.getElementById('recipientsTableBody');
+  if (!tbody) return;
+
+  let list = fullList;
+  if (currentQuickRecipientFilter === 'sick') {
+    list = fullList.filter(r => {
+      const note = String(r.Note || '') + ' ' + String(r.HealthConstraints || '');
+      return /ป่วย|รักษา|งดฝึก|พัก|admit|รพ|ตรวจ/i.test(note) || (r.VisitsCount && r.VisitsCount > 0) || r.HasActiveSick;
+    });
+  } else if (currentQuickRecipientFilter === 'allergy') {
+    list = fullList.filter(r => {
+      const da = String(r.DrugAllergies || r.AllergyMedication || '').trim();
+      const fa = String(r.FoodAllergies || '').trim();
+      const oa = String(r.OtherAllergies || '').trim();
+      return (da && da !== '-') || (fa && fa !== '-') || (oa && oa !== '-');
+    });
+  } else if (currentQuickRecipientFilter === 'chronic') {
+    list = fullList.filter(r => {
+      const cd = String(r.CongenitalDiseases || '').trim();
+      return cd && cd !== '-';
+    });
+  } else if (currentQuickRecipientFilter === 'year1') {
+    list = fullList.filter(r => String(r.NumberOrOrder || '').startsWith('69') || String(r.Group || '').includes('1'));
+  } else if (currentQuickRecipientFilter === 'year2') {
+    list = fullList.filter(r => String(r.NumberOrOrder || '').startsWith('68') || String(r.Group || '').includes('2'));
+  } else if (currentQuickRecipientFilter === 'year3') {
+    list = fullList.filter(r => String(r.NumberOrOrder || '').startsWith('67') || String(r.Group || '').includes('3'));
+  } else if (currentQuickRecipientFilter === 'year4') {
+    list = fullList.filter(r => String(r.NumberOrOrder || '').startsWith('66') || String(r.Group || '').includes('4'));
+  }
+
+  appState.recipientsList = list;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center p-4">
+      <i class="fas fa-search text-muted fa-2x mb-2 d-block"></i>
+      ไม่พบข้อมูลนักเรียนพยาบาล (นพอ.) หรือผู้รับบริการในหมวดหมู่นี้<br>
+      <button class="btn btn-outline btn-sm mt-2" onclick="setQuickRecipientFilter('all')"><i class="fas fa-users"></i> ดูทั้งหมด</button>
+    </td></tr>`;
+    return;
+  }
+
+  const role = appState.currentUser ? appState.currentUser.role : 'VIEWER';
+  const htmlRows = list.map(r => {
+    const isDemoBadge = r.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
+    const statusBadge = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
+    
+    // การจำกัดปุ่มสิทธิ์
+    let actionsHtml = `<button class="btn btn-outline btn-sm" onclick="viewRecipientProfile('${r.RecipientID}')"><i class="fas fa-id-card"></i> แฟ้มประวัติ</button>`;
+    
+    if (role !== 'VIEWER') {
+      actionsHtml += ` <button class="btn btn-primary btn-sm" onclick="openEditRecipientModal('${r.RecipientID}')"><i class="fas fa-edit"></i> แก้ไข</button>`;
+    }
+    
+    if (role === 'ADMIN' || role === 'MEDICAL') {
+      actionsHtml += ` <button class="btn btn-secondary btn-sm" onclick="openNewVisitFromRecipient('${r.RecipientID}')"><i class="fas fa-notes-medical"></i> บันทึกตรวจ</button>`;
+    }
+    
+    const studentIdBadge = r.NumberOrOrder ? `<span class="badge-student-id"><i class="fas fa-id-badge"></i> ${r.NumberOrOrder}</span><br>` : '';
+    const photoBadge = r.PhotoFileId ? '<span class="badge-photo" title="มีรูปประจำตัวในทะเบียนกลาง"><i class="fas fa-camera"></i></span> ' : '';
+    return `
+      <tr>
+        <td>${isDemoBadge}${studentIdBadge}<small class="text-muted">${r.RecipientID}</small></td>
+        <td>${photoBadge}<strong>${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''}</strong></td>
+        <td>${r.Nickname || '-'}</td>
+        <td>${r.RecipientType || 'นักเรียนพยาบาลทหารอากาศ'}</td>
+        <td>${r.Group || '-'} / ${r.Level || '-'}</td>
+        <td>${r.CongenitalDiseases !== '-' && r.CongenitalDiseases ? `<span class="badge badge-danger">${r.CongenitalDiseases}</span>` : '-'}</td>
+        <td>${statusBadge}</td>
+        <td>${actionsHtml}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.innerHTML = htmlRows;
+}
+
 function loadRecipients() {
   const searchVal = document.getElementById('recipientSearchInput').value;
   const typeVal = document.getElementById('recipientTypeFilter').value;
@@ -699,53 +834,9 @@ function loadRecipients() {
   };
   
   callBackend('getServiceRecipients', [appState.sessionToken, filters], function(list) {
-    appState.recipientsList = list;
-    const tbody = document.getElementById('recipientsTableBody');
-    if (!tbody) return;
-    
-    if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center p-4">
-        <i class="fas fa-search text-muted fa-2x mb-2 d-block"></i>
-        ไม่พบข้อมูลนักเรียนพยาบาล (นพอ.) หรือผู้รับบริการตามคำค้นนี้<br>
-        <button class="btn btn-outline btn-sm mt-2" onclick="clearRecipientFilters()"><i class="fas fa-redo"></i> ล้างตัวกรองทั้งหมด</button>
-      </td></tr>`;
-      return;
-    }
-    
-    const role = appState.currentUser ? appState.currentUser.role : 'VIEWER';
-    
-    const htmlRows = list.map(r => {
-      const isDemoBadge = r.IsDemo ? '<span class="badge badge-warning">Demo</span> ' : '';
-      const statusBadge = r.Status === 'Active' ? '<span class="badge badge-success">ปกติ</span>' : '<span class="badge badge-danger">ปิดใช้งาน</span>';
-      
-      // การจำกัดปุ่มสิทธิ์
-      let actionsHtml = `<button class="btn btn-outline btn-sm" onclick="viewRecipientProfile('${r.RecipientID}')"><i class="fas fa-id-card"></i> แฟ้มประวัติ</button>`;
-      
-      if (role !== 'VIEWER') {
-        actionsHtml += ` <button class="btn btn-primary btn-sm" onclick="openEditRecipientModal('${r.RecipientID}')"><i class="fas fa-edit"></i> แก้ไข</button>`;
-      }
-      
-      if (role === 'ADMIN' || role === 'MEDICAL') {
-        actionsHtml += ` <button class="btn btn-secondary btn-sm" onclick="openNewVisitFromRecipient('${r.RecipientID}')"><i class="fas fa-notes-medical"></i> บันทึกตรวจ</button>`;
-      }
-      
-      const studentIdBadge = r.NumberOrOrder ? `<span class="badge-student-id"><i class="fas fa-id-badge"></i> ${r.NumberOrOrder}</span><br>` : '';
-      const photoBadge = r.PhotoFileId ? '<span class="badge-photo" title="มีรูปประจำตัวในทะเบียนกลาง"><i class="fas fa-camera"></i></span> ' : '';
-      return `
-        <tr>
-          <td>${isDemoBadge}${studentIdBadge}<small class="text-muted">${r.RecipientID}</small></td>
-          <td>${photoBadge}<strong>${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''}</strong></td>
-          <td>${r.Nickname || '-'}</td>
-          <td>${r.RecipientType || 'นักเรียนพยาบาลทหารอากาศ'}</td>
-          <td>${r.Group || '-'} / ${r.Level || '-'}</td>
-          <td>${r.CongenitalDiseases !== '-' && r.CongenitalDiseases ? `<span class="badge badge-danger">${r.CongenitalDiseases}</span>` : '-'}</td>
-          <td>${statusBadge}</td>
-          <td>${actionsHtml}</td>
-        </tr>
-      `;
-    }).join('');
-
-    tbody.innerHTML = htmlRows;
+    appState.rawRecipientsList = list || [];
+    updateQuickRecipientChips(appState.rawRecipientsList);
+    renderFilteredRecipients();
   });
 }
 
@@ -933,6 +1024,299 @@ function renderBasicProfileData(r) {
   setT('profContact', `${r.ContactName || '-'} (${r.ContactRelationship || '-'}) โทร: ${r.ContactPhone || '-'}`);
   setT('profEmergency', `${r.EmergencyContact || '-'} โทร: ${r.EmergencyPhone || '-'}`);
   setT('profNote', r.Note);
+
+  // แสดงผลแบบฟอร์มประวัติ นพอ. ทางการ (Official Record Sheet)
+  renderOfficialForm(r);
+}
+
+/**
+ * เติมข้อมูลลงในแบบฟอร์มบันทึกประวัติส่วนตัว นพอ. (ทางการ)
+ */
+function renderOfficialForm(r) {
+  if (!r) return;
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = (val !== null && val !== undefined && String(val).trim() !== '') ? val : '-';
+  };
+
+  // Header info
+  setVal('ofNationalId', r.NationalID);
+  setVal('ofTreatmentRight', r.TreatmentRight || 'ข้าราชการ / เบิกตรง / บัตรทอง');
+  setVal('ofHnNumber', r.HN || r.HospitalNumber || '-');
+  setVal('ofStudentId', r.NumberOrOrder || r.RecipientID);
+
+  // Section 1: ข้อมูลส่วนตัว
+  const fullName = `${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''}`.trim();
+  setVal('ofFullName', fullName);
+  setVal('ofGender', r.Gender || '-');
+  setVal('ofAge', r.Age || '-');
+  setVal('ofNameEn', r.NameEn || r.EnglishName || '-');
+  setVal('ofBloodGroup', r.BloodType || r.BloodGroup || '-');
+  setVal('ofRh', r.Rh || '+');
+  setVal('ofBirthDate', r.BirthDate ? formatDateThai(r.BirthDate) : '-');
+  setVal('ofRace', r.Race || 'ไทย');
+  setVal('ofNationality', r.Nationality || 'ไทย');
+  setVal('ofReligion', r.Religion || 'พุทธ');
+  setVal('ofCareer', r.Career || 'นักเรียนพยาบาลทหารอากาศ');
+  setVal('ofAffiliation', r.Affiliation || 'วิทยาลัยพยาบาลทหารอากาศ พอ.');
+  
+  const yr = r.Level || (r.NumberOrOrder ? (r.NumberOrOrder.startsWith('69') ? '1' : r.NumberOrOrder.startsWith('68') ? '2' : r.NumberOrOrder.startsWith('67') ? '3' : '4') : '1');
+  setVal('ofPosition', r.Position || ('นพอ.ชั้นปีที่ ' + yr));
+
+  // Weight, Height, BMI
+  setVal('ofWeight', r.Weight || '-');
+  setVal('ofHeight', r.Height || '-');
+  let bmi = '-';
+  const w = parseFloat(r.Weight);
+  const h = parseFloat(r.Height);
+  if (!isNaN(w) && !isNaN(h) && h > 0) {
+    bmi = (w / Math.pow(h / 100, 2)).toFixed(1);
+  }
+  setVal('ofBmi', bmi);
+
+  setVal('ofAddress', r.Address || '-');
+  setVal('ofStreet', r.Street || '-');
+  setVal('ofSubdistrict', r.Subdistrict || r.SubUnit || '-');
+  setVal('ofDistrict', r.District || '-');
+  setVal('ofProvince', r.Province || 'กรุงเทพมหานคร');
+  setVal('ofZipCode', r.ZipCode || '-');
+  setVal('ofPhone', r.Phone || r.Mobile || '-');
+
+  // Section 2: ข้อมูลผู้ปกครอง
+  setVal('ofFatherName', r.FatherName || '-');
+  setVal('ofFatherPhone', r.FatherPhone || '-');
+  setVal('ofMotherName', r.MotherName || '-');
+  setVal('ofMotherPhone', r.MotherPhone || '-');
+  setVal('ofEmergencyContactName', r.ContactName || r.EmergencyContact || '-');
+  setVal('ofEmergencyRelation', r.ContactRelationship || 'ผู้ปกครอง');
+  setVal('ofEmergencyPhone', r.ContactPhone || r.EmergencyPhone || '-');
+  setVal('ofContactAddress', r.ContactAddress || r.Address || '-');
+  setVal('ofContactStreet', r.ContactStreet || r.Street || '-');
+  setVal('ofContactSubdistrict', r.ContactSubdistrict || r.Subdistrict || '-');
+  setVal('ofContactDistrict', r.ContactDistrict || r.District || '-');
+  setVal('ofContactProvince', r.ContactProvince || r.Province || 'กรุงเทพมหานคร');
+  setVal('ofContactZipCode', r.ContactZipCode || r.ZipCode || '-');
+
+  // Section 3: ประวัติการเจ็บป่วย
+  const allAllergies = [r.DrugAllergies, r.FoodAllergies, r.OtherAllergies].filter(x => x && x !== '-').join(', ');
+  setVal('ofAllergies', allAllergies || '-');
+  setVal('ofSurgeries', r.SurgeryHistory || '-');
+  setVal('ofCongenital', r.CongenitalDiseases || '-');
+
+  // Family history
+  setVal('ofFamFather', r.FamilyHistoryFather || '-');
+  setVal('ofFamMother', r.FamilyHistoryMother || '-');
+  setVal('ofFamSiblings', r.FamilyHistorySiblings || '-');
+  setVal('ofFamGrandparents1', r.FamilyHistoryGrandparents1 || '-');
+  setVal('ofFamGrandparents2', r.FamilyHistoryGrandparents2 || '-');
+  setVal('ofFamOthers', r.FamilyHistoryOthers || '-');
+
+  // Signature & Record date
+  setVal('ofSignName', fullName || 'นพอ. ....................................');
+  const recDate = r.UpdatedDate || r.CreatedDate || new Date();
+  setVal('ofRecordDate', formatDateThai(recDate));
+
+  // Photo
+  const photoImg = document.getElementById('ofPhotoImg');
+  const photoPlh = document.getElementById('ofPhotoPlaceholder');
+  const profPhoto = document.getElementById('profPhotoImg');
+  if (photoImg && photoPlh) {
+    if (profPhoto && profPhoto.src && profPhoto.style.display !== 'none') {
+      photoImg.src = profPhoto.src;
+      photoImg.style.display = 'block';
+      photoPlh.style.display = 'none';
+    } else if (r.PhotoUrl) {
+      photoImg.src = r.PhotoUrl;
+      photoImg.style.display = 'block';
+      photoPlh.style.display = 'none';
+    } else {
+      photoImg.style.display = 'none';
+      photoPlh.style.display = 'block';
+    }
+  }
+}
+
+/**
+ * พิมพ์แบบฟอร์มประวัติส่วนตัวทางการ (A4)
+ */
+function printOfficialRecordSheet() {
+  const printContent = document.getElementById('officialFormPrintArea');
+  if (!printContent) return;
+
+  const win = window.open('', '_blank', 'width=900,height=800');
+  if (!win) {
+    window.print();
+    return;
+  }
+  const css = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>แบบฟอร์มบันทึกประวัติส่วนตัว นพอ.</title>
+    <style>
+      ${css}
+      body { background:#fff; margin:0; padding:15mm; }
+      .official-record-sheet { border:none; box-shadow:none; max-width:100%; padding:0; }
+      @page { size: A4; margin: 15mm; }
+    </style>
+  </head><body>
+    ${printContent.outerHTML}
+    <script>
+      window.onload = function() {
+        window.focus();
+        window.print();
+      };
+    <\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+/**
+ * เปิดเอกสารทางการ: ใบขออนุญาตตรวจรักษา หรือ ใบบันทึกตรวจรักษา
+ */
+function openOfficialVisitDoc(visitId, docType) {
+  const r = appState.selectedRecipient || {};
+  const visits = r.visits || [];
+  const v = visits.find(x => x.VisitID === visitId) || {};
+  const container = document.getElementById('officialVisitDocBody');
+  const titleEl = document.getElementById('officialVisitDocTitle');
+  if (!container) return;
+
+  const fullName = `${r.Title || ''}${r.FirstName || ''} ${r.LastName || ''}`.trim();
+  const studentCode = r.NumberOrOrder || r.RecipientID || '-';
+  const yr = r.Level || (studentCode.startsWith('69') ? '1' : studentCode.startsWith('68') ? '2' : studentCode.startsWith('67') ? '3' : '4');
+
+  // Format Thai date parts for the header: วันที่ ... เดือน ... พ.ศ. ...
+  const vDate = v.VisitDate ? new Date(v.VisitDate) : new Date();
+  const day = vDate.getDate();
+  const monthNamesThai = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const month = monthNamesThai[vDate.getMonth()];
+  const yearTh = vDate.getFullYear() + 543;
+  const timeStr = v.TimeIn ? (String(v.TimeIn).substring(11, 16) || v.TimeIn) : '08:30';
+
+  if (docType === 'request') {
+    // การขออนุญาต การไปตรวจ หรือ ไปรักษา (Image 2)
+    if (titleEl) titleEl.textContent = 'การขออนุญาต การไปตรวจ หรือ ไปรักษา';
+    container.innerHTML = `
+      <div id="officialVisitDocPrintArea" class="official-doc-card">
+        <div class="official-doc-topbar">
+          <div>วันที่ <span class="val">${day}</span> เดือน <span class="val">${month}</span> พ.ศ. <span class="val">${yearTh}</span></div>
+          <div class="crest-wrap">
+            <img class="crest rtafnc-logo-img" alt="ตราสัญลักษณ์ วพอ.">
+          </div>
+          <div>รหัส นพอ. : <span class="val" style="font-weight:700;">${profEsc_(studentCode)}</span></div>
+        </div>
+
+        <div class="official-doc-title-wrap">
+          <div class="official-doc-title">การขออนุญาต<br>การไปตรวจ หรือ ไปรักษา</div>
+        </div>
+
+        <div class="official-doc-frame">
+          <div class="official-doc-line">
+            <span>ชื่อ – สกุล : <span class="val" style="font-weight:700;">${profEsc_(fullName)}</span></span>
+            <span style="margin-left:auto;">ชั้นปีที่ : <span class="val">${profEsc_(yr)}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>ไปตรวจ/รักษา ที่ : <span class="val">${profEsc_(v.IncidentLocation || 'ห้องพยาบาล วพอ.พอ.')}</span></span>
+            <span>เนื่องจาก : <span class="val">${profEsc_(v.IncidentType || 'มีอาการผิดปกติ')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>แผนกที่ไปตรวจ/รักษา : <span class="val">${profEsc_(v.Department || 'แผนกปกครอง วพอ.พอ.')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>อาการสำคัญ (CC) : <span class="val">${profEsc_(v.ChiefComplaint || '-')}</span></span>
+          </div>
+        </div>
+
+        <div class="official-doc-timestamp">
+          บันทึกเมื่อ ${day} ${month} ${yearTh} เวลา ${timeStr} น.
+        </div>
+      </div>
+    `;
+  } else {
+    // บันทึก การตรวจ/รักษา นพอ. (Image 1)
+    if (titleEl) titleEl.textContent = 'บันทึก การตรวจ/รักษา นพอ.';
+    container.innerHTML = `
+      <div id="officialVisitDocPrintArea" class="official-doc-card">
+        <div class="official-doc-topbar">
+          <div>วันที่ <span class="val">${day}</span> เดือน <span class="val">${month}</span> พ.ศ. <span class="val">${yearTh}</span></div>
+          <div class="crest-wrap">
+            <img class="crest rtafnc-logo-img" alt="ตราสัญลักษณ์ วพอ.">
+          </div>
+          <div>รหัส นพอ. : <span class="val" style="font-weight:700;">${profEsc_(studentCode)}</span></div>
+        </div>
+
+        <div class="official-doc-title-wrap">
+          <div class="official-doc-title">บันทึก การตรวจ/รักษา นพอ.</div>
+        </div>
+
+        <div class="official-doc-frame">
+          <div class="official-doc-frame-title">ส่วนที่ 1 : การไปตรวจ/รักษาอาการ</div>
+          <div class="official-doc-line">
+            <span>ชื่อ – สกุล : <span class="val" style="font-weight:700;">${profEsc_(fullName)}</span></span>
+            <span style="margin-left:auto;">ชั้นปีที่ : <span class="val">${profEsc_(yr)}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>ไปตรวจ/รักษา ที่ : <span class="val">${profEsc_(v.IncidentLocation || 'โรงพยาบาลภูมิพลอดุลยเดช พอ.')}</span></span>
+            <span>เนื่องจาก : <span class="val">${profEsc_(v.IncidentType || 'ตรวจรักษาอาการ')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>แผนกที่ไปตรวจ/รักษา : <span class="val">${profEsc_(v.Department || 'ห้องฉุกเฉินและอุบัติเหตุ (ER)')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>อาการสำคัญ (CC) : <span class="val">${profEsc_(v.ChiefComplaint || '-')}</span></span>
+          </div>
+        </div>
+
+        <div class="official-doc-frame">
+          <div class="official-doc-frame-title">ส่วนที่ 2 : การวินิจฉัย และ การรักษา</div>
+          <div class="official-doc-line">
+            <span>การวินิจฉัยของแพทย์ (Dx) : <span class="val">${profEsc_(v.Diagnosis || v.InitialAssessment || '-')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>การรักษาของแพทย์ : <span class="val">${profEsc_(v.TreatmentDetails || v.Outcome || '-')}</span></span>
+          </div>
+          <div class="official-doc-line">
+            <span>ยา/วัคซีนที่ได้รับ : <span class="val">${profEsc_(v.MedicationsGiven || '-')}</span></span>
+          </div>
+        </div>
+
+        <div class="official-doc-timestamp">
+          บันทึกเมื่อ ${day} ${month} ${yearTh} เวลา ${timeStr} น.
+        </div>
+      </div>
+    `;
+  }
+  syncCollegeLogos();
+  openModal('officialVisitDocModal');
+}
+
+function printOfficialVisitDoc() {
+  const printArea = document.getElementById('officialVisitDocPrintArea');
+  if (!printArea) return;
+
+  const win = window.open('', '_blank', 'width=800,height=700');
+  if (!win) {
+    window.print();
+    return;
+  }
+  const css = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>เอกสารทางการ นพอ.</title>
+    <style>
+      ${css}
+      body { background:#fff; margin:0; padding:15mm; display:flex; justify-content:center; }
+      .official-doc-card { border: 2.5px solid #082444 !important; box-shadow:none !important; width:100% !important; max-width:180mm !important; }
+      @page { size: A4; margin: 15mm; }
+    </style>
+  </head><body>
+    ${printArea.outerHTML}
+    <script>
+      window.onload = function() {
+        window.focus();
+        window.print();
+      };
+    <\/script>
+  </body></html>`);
+  win.document.close();
 }
 
 function viewRecipientProfile(id) {
@@ -1080,8 +1464,10 @@ function renderProfileVisits(visits) {
           <div class="text-muted">${profEsc_(v.Outcome || '-')}</div>
         </td>
         <td>${profEsc_(v.RecordedBy || '-')}</td>
-        <td>
-          <button class="btn btn-outline btn-sm" onclick="viewVisitDetails('${profEsc_(v.VisitID)}')"><i class="fas fa-eye"></i> ดูใบรักษา</button>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm mr-1" onclick="openOfficialVisitDoc('${profEsc_(v.VisitID)}', 'request')" title="พิมพ์ใบขออนุญาตตรวจรักษา"><i class="fas fa-file-alt"></i> ใบขออนุญาต</button>
+          <button class="btn btn-primary btn-sm mr-1" onclick="openOfficialVisitDoc('${profEsc_(v.VisitID)}', 'treatment')" title="พิมพ์ใบบันทึกการตรวจรักษา นพอ."><i class="fas fa-stethoscope"></i> ใบบันทึกตรวจ</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewVisitDetails('${profEsc_(v.VisitID)}')" title="ดูรายละเอียดบันทึก"><i class="fas fa-eye"></i></button>
         </td>
       </tr>
     `;
@@ -3512,6 +3898,10 @@ function switchToLiffMode() {
 }
 
 function switchToMainApp() {
+  // หากอยู่ใน LINE LIFF ป้องกันไม่ให้นักเรียนสลับไปหน้าผู้ดูแลระบบโดยเด็ดขาด (Security & Privacy Isolation)
+  if (window.liff && window.liff.isInClient && window.liff.isInClient()) {
+    return;
+  }
   document.getElementById('liffView').style.display = 'none';
   if (appState.sessionToken) {
     document.getElementById('appView').style.display = 'flex';
@@ -3547,8 +3937,209 @@ function switchLiffTab(tabName) {
     if (liffCurrentStudent) {
       renderDigitalHealthCard(liffCurrentStudent);
     }
+  } else if (tabName === 'fahsai') {
+    document.getElementById('liffTabFahsai').classList.add('active');
+    initFahsaiChat();
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ========================================================
+   AI ฟ้าใส (Fahsai Nurse Assistant) - LINE LIFF AI Triage
+   ======================================================== */
+let fahsaiInitialized = false;
+
+function initFahsaiChat() {
+  const body = document.getElementById('fahsaiChatBody');
+  if (!body) return;
+  if (fahsaiInitialized && body.children.length > 0) return;
+  fahsaiInitialized = true;
+
+  const stu = liffCurrentStudent || liffOwnProfile || null;
+  const name = stu ? `${stu.Title || ''}${stu.FirstName || ''} ${stu.LastName || ''}`.trim() : 'น้องนักเรียนพยาบาล';
+  const yr = stu ? (stu.Level || (stu.NumberOrOrder ? (stu.NumberOrOrder.startsWith('69') ? '1' : stu.NumberOrOrder.startsWith('68') ? '2' : stu.NumberOrOrder.startsWith('67') ? '3' : '4') : '')) : '';
+  const yrText = yr ? ` (ชั้นปีที่ ${yr})` : '';
+
+  body.innerHTML = `
+    <div class="fahsai-msg ai">
+      <div class="fahsai-bubble">
+        <strong>สวัสดีค่ะ นพอ. ${profEsc_(name)}${yrText} 💙</strong><br>
+        ฟ้าใสเป็น AI พยาบาลผู้ช่วยประจำวิทยาลัยพยาบาลทหารอากาศ ยินดีดูแลสุขภาพตลอด 24 ชั่วโมงค่ะ<br><br>
+        วันนี้น้องมีอาการไม่สบาย ต้องการปรึกษาเรื่องยา หรือต้องการทำเรื่องขออนุญาตไปตรวจรักษาที่ห้องพยาบาล วพอ./รพ.ภูมิพลฯ ไหมคะ? สามารถกดเลือกหัวข้อด้านล่างหรือพิมพ์บอกฟ้าใสได้เลยนะคะ 🌸
+      </div>
+    </div>
+  `;
+  body.scrollTop = body.scrollHeight;
+}
+
+function resetFahsaiChat() {
+  fahsaiInitialized = false;
+  initFahsaiChat();
+}
+
+function sendFahsaiQuickMsg(text) {
+  sendFahsaiMessage(text);
+}
+
+function sendFahsaiChatMessage() {
+  const input = document.getElementById('fahsaiChatInput');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  sendFahsaiMessage(text);
+}
+
+function sendFahsaiMessage(text) {
+  const body = document.getElementById('fahsaiChatBody');
+  if (!body) return;
+
+  // เพิ่มบับเบิลของผู้ใช้
+  const userDiv = document.createElement('div');
+  userDiv.className = 'fahsai-msg user';
+  userDiv.innerHTML = `<div class="fahsai-bubble">${profEsc_(text)}</div>`;
+  body.appendChild(userDiv);
+  body.scrollTop = body.scrollHeight;
+
+  // แสดงตัวบ่งชี้ว่ากำลังคิด
+  const typingDiv = document.createElement('div');
+  typingDiv.className = 'fahsai-msg ai';
+  typingDiv.id = 'fahsaiTyping';
+  typingDiv.innerHTML = `<div class="fahsai-bubble" style="color:#64748b;"><i class="fas fa-spinner fa-spin"></i> ฟ้าใสกำลังประเมินอาการ...</div>`;
+  body.appendChild(typingDiv);
+  body.scrollTop = body.scrollHeight;
+
+  setTimeout(() => {
+    const typing = document.getElementById('fahsaiTyping');
+    if (typing) typing.remove();
+
+    const stu = liffCurrentStudent || liffOwnProfile || {};
+    const reply = generateFahsaiResponse(text, stu);
+
+    const aiDiv = document.createElement('div');
+    aiDiv.className = 'fahsai-msg ai';
+    aiDiv.innerHTML = `<div class="fahsai-bubble">${reply}</div>`;
+    body.appendChild(aiDiv);
+    body.scrollTop = body.scrollHeight;
+  }, 450);
+}
+
+function generateFahsaiResponse(query, stu) {
+  const q = String(query).toLowerCase();
+  const da = stu.DrugAllergies || stu.AllergyMedication;
+  const allergyWarning = (da && da !== '-') ? `<div class="alert alert-danger p-2 mt-2 mb-1" style="font-size:0.8rem;"><i class="fas fa-exclamation-triangle"></i> <strong>ประวัติแพ้ยาของคุณ:</strong> ${profEsc_(da)} (ห้ามใช้ยานี้เด็ดขาดและแจ้งเจ้าหน้าที่ทุกครั้ง)</div>` : '';
+
+  // 1. ปวดหัว / เป็นไข้ / หวัด / เจ็บคอ
+  if (/ปวดหัว|ปวดศีรษะ|เวียนหัว|ตัวร้อน|มีไข้|ไข้|หนาวสั่น|เจ็บคอ|ไอ|น้ำมูก|เป็นหวัด/i.test(q)) {
+    return `
+      <strong>ประเมินอาการเบื้องต้น:</strong><br>
+      มีโอกาสเป็นภาวะไข้หวัด พักผ่อนไม่เพียงพอ หรือการติดเชื้อระบบทางเดินหายใจเบื้องต้นค่ะ<br><br>
+      <strong>การดูแลเบื้องต้น:</strong><br>
+      1. พักผ่อนในห้องพัก อากาศถ่ายเทสะดวก<br>
+      2. ดื่มน้ำอุ่นมากๆ อย่างน้อย 2-3 ลิตร/วัน<br>
+      3. หากมีไข้ > 37.8°C สามารถเช็ดตัวลดไข้ และรับประทานยาลดไข้พาราเซตามอลได้ตามน้ำหนักตัว (ทุก 4-6 ชม.)<br>
+      ${allergyWarning}
+      <br>
+      <strong>หากอาการไม่ดีขึ้น หรือต้องเข้าแถว/ฝึกภาคปฏิบัติ:</strong><br>
+      น้องควรทำเรื่องขออนุญาตไปรับการตรวจรักษาที่ห้องพยาบาล วพอ. หรือ รพ.ภูมิพลฯ ค่ะ
+      <button type="button" class="btn btn-primary btn-sm mt-2 w-100" onclick="fahsaiCreateLeaveRequest('${profEsc_(query)}')">
+        <i class="fas fa-file-medical"></i> ขออนุญาตไปตรวจรักษาทันที (กรอกอาการนี้)
+      </button>
+    `;
+  }
+
+  // 2. ปวดท้อง / ท้องเสีย / คลื่นไส้
+  if (/ปวดท้อง|ท้องเสีย|ท้องร่วง|ถ่ายเหลว|คลื่นไส้|อาเจียน|อาหารเป็นพิษ|กระเพาะ/i.test(q)) {
+    return `
+      <strong>ประเมินอาการระบบทางเดินอาหาร:</strong><br>
+      อาจเกิดจากภาวะลำไส้อักเสบ อาหารเป็นพิษ หรือโรคกระเพาะอาหารค่ะ<br><br>
+      <strong>คำแนะนำสำคัญ:</strong><br>
+      1. จิบน้ำเกลือแร่ ORS บ่อยๆ ป้องกันภาวะขาดน้ำ<br>
+      2. งดอาหารรสจัด อาหารมัน นม และน้ำเย็น<br>
+      3. สังเกตสัญญาณอันตราย: ถ่ายเป็นมูกเลือด ไข้สูง หรือปวดเกร็งท้องรุนแรง<br>
+      ${allergyWarning}
+      <button type="button" class="btn btn-primary btn-sm mt-2 w-100" onclick="fahsaiCreateLeaveRequest('${profEsc_(query)}')">
+        <i class="fas fa-file-medical"></i> ขออนุญาตไปตรวจรักษาที่ห้องพยาบาล วพอ.
+      </button>
+    `;
+  }
+
+  // 3. อุบัติเหตุ / บาดเจ็บ / มีแผล
+  if (/อุบัติเหตุ|แผล|ถลอก|เลือดออก|หกล้ม|ข้อเท้าแพลง|ตกบันได|กระแทก/i.test(q)) {
+    return `
+      <strong>ประเมินการบาดเจ็บ/อุบัติเหตุ:</strong><br>
+      1. หากมีแผลสด: ล้างแผลด้วยน้ำสะอาด กดห้ามเลือดด้วยผ้าสะอาด<br>
+      2. หากมีข้อเท้าแพลง/ฟกช้ำ: ใช้หลัก <strong>R.I.C.E.</strong> (พัก, ประคบเย็น, พันกระชับ, ยกสูง)<br>
+      3. ควรได้รับการตรวจรักษาและทำแผล หรือประเมินการฉีดวัคซีนบาดทะยัก (Tetanus Toxoid)<br><br>
+      น้องควรไปรับการตรวจที่ห้องพยาบาล วพอ. หรือห้องฉุกเฉิน (ER) รพ.ภูมิพลฯ ทันทีค่ะ
+      <button type="button" class="btn btn-primary btn-sm mt-2 w-100" onclick="fahsaiCreateLeaveRequest('${profEsc_(query)}')">
+        <i class="fas fa-ambulance"></i> ขออนุญาตไปตรวจรักษา ER / ห้องพยาบาล
+      </button>
+    `;
+  }
+
+  // 4. ขออนุญาตไปตรวจ / ทำบัตรอนุญาต
+  if (/ขออนุญาต|ใบลา|ไปหาหมอ|ไปรพ|ไป รพ|ทำบัตร|ตรวจรักษา/i.test(q)) {
+    return `
+      <strong>ขั้นตอนการขออนุญาตไปตรวจรักษา:</strong><br>
+      ระบบจะออก <strong>บัตรขออนุญาตดิจิทัล</strong> พร้อมส่งแจ้งเตือนให้อาจารย์ผู้ปกครองอนุมัติผ่าน LINE / Telegram แบบ 1 คลิกทันทีค่ะ<br><br>
+      เมื่ออาจารย์อนุมัติแล้ว บัตรจะเปลี่ยนสถานะเป็น <span class="badge badge-success">อนุมัติแล้ว</span> สามารถแสดงบัตรให้เวรปกครองตรวจสอบและเดินทางไปตรวจได้เลยค่ะ
+      <button type="button" class="btn btn-primary btn-sm mt-2 w-100" onclick="switchLiffTab('checkin')">
+        <i class="fas fa-paper-plane"></i> ไปที่หน้าแจ้งอาการ / ขออนุญาต
+      </button>
+    `;
+  }
+
+  // 5. ปรึกษาเรื่องยา / ประวัติแพ้ยา
+  if (/ยา|แพ้ยา|ทานยา|กินยา|พารา|แก้แพ้/i.test(q)) {
+    return `
+      <strong>คำแนะนำเรื่องยาและความปลอดภัย:</strong><br>
+      ${allergyWarning || '<em>ในระบบยังไม่พบประวัติแพ้ยาของคุณ</em>'}<br>
+      • การรับประทานยาควรอยู่ในการดูแลของแพทย์หรือพยาบาลประจำห้องพยาบาล วพอ.<br>
+      • หากมีอาการแพ้ยา เช่น ผื่นคัน ลมพิษ ตาบวม ปากบวม หายใจไม่ออก ให้หยุดยาทันทีและแจ้งอาจารย์ผู้ปกครอง/ห้องพยาบาลทันทีค่ะ
+      <button type="button" class="btn btn-outline btn-sm mt-2 w-100" onclick="switchLiffTab('card')">
+        <i class="fas fa-id-card"></i> เปิดดูบัตรสุขภาพและประวัติแพ้ยา
+      </button>
+    `;
+  }
+
+  // 6. ใบนัด รพ.ภูมิพลฯ
+  if (/นัด|ใบนัด|รพ.ภูมิพล|รพ ภูมิพล/i.test(q)) {
+    return `
+      <strong>การไปตรวจตามนัด รพ.ภูมิพลฯ:</strong><br>
+      • อย่าลืมนำบัตรประจำตัวประชาชน, บัตรนักเรียนพยาบาล, ใบนัด และบัตร รพ.ภูมิพลฯ ไปด้วยค่ะ<br>
+      • ก่อนออกเดินทาง ให้ยื่นคำขออนุญาตผ่านระบบนี้เพื่อให้อาจารย์อนุมัติการออกนอกพื้นที่วิทยาลัยฯ ค่ะ
+      <button type="button" class="btn btn-primary btn-sm mt-2 w-100" onclick="switchLiffTab('checkin')">
+        <i class="fas fa-calendar-check"></i> ทำเรื่องขออนุญาตไปตามนัด
+      </button>
+    `;
+  }
+
+  // คำตอบมาตรฐานของพยาบาลฟ้าใส
+  return `
+    ฟ้าใสได้รับข้อความแล้วค่ะ 💙<br>
+    สำหรับการดูแลสุขภาพของนักเรียนพยาบาลทหารอากาศ: หากน้องมีอาการไม่สบาย ต้องการปรึกษาเรื่องยา หรือต้องการขออนุญาตไปตรวจรักษาที่ห้องพยาบาล วพอ. หรือ รพ.ภูมิพลฯ สามารถกดปุ่มด้านล่างเพื่อดำเนินการได้ทันทีค่ะ
+    <div class="mt-2" style="display:flex;gap:6px;flex-direction:column;">
+      <button type="button" class="btn btn-primary btn-sm" onclick="fahsaiCreateLeaveRequest('${profEsc_(query)}')">
+        <i class="fas fa-stethoscope"></i> แจ้งอาการและขออนุญาตไปตรวจรักษา
+      </button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="switchLiffTab('card')">
+        <i class="fas fa-qrcode"></i> เปิดดูบัตรสุขภาพประจำตัว
+      </button>
+    </div>
+  `;
+}
+
+function fahsaiCreateLeaveRequest(symptom) {
+  switchLiffTab('checkin');
+  setTimeout(() => {
+    const symInput = document.getElementById('liffCheckinSymptoms');
+    if (symInput) {
+      symInput.value = symptom || '';
+      symInput.focus();
+    }
+    showToast('ฟ้าใสกรอกอาการให้เรียบร้อยแล้วค่ะ โปรดตรวจสอบและกดยืนยัน', 'info');
+  }, 150);
 }
 
 function quickFillLiffId(id) {

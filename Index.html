@@ -105,6 +105,9 @@
       <button type="button" class="liff-tab-btn liff-tab-primary" data-liff-tab="checkin" onclick="switchLiffTab('checkin')">
         <span class="liff-tab-fab"><i class="fas fa-stethoscope"></i></span><span>แจ้งอาการ</span>
       </button>
+      <button type="button" class="liff-tab-btn" data-liff-tab="fahsai" onclick="switchLiffTab('fahsai')">
+        <i class="fas fa-user-nurse"></i><span>AI ฟ้าใส</span>
+      </button>
       <button type="button" class="liff-tab-btn" data-liff-tab="card" onclick="switchLiffTab('card')">
         <i class="fas fa-qrcode"></i><span>บัตรสุขภาพ</span>
       </button>
@@ -290,6 +293,53 @@
             <i class="fas fa-search"></i> ไปยังแท็บค้นหารหัส
           </button>
         </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: AI ฟ้าใส (Fahsai AI Nurse Assistant) -->
+    <section id="liffTabFahsai" class="liff-tab-content">
+      <div class="fahsai-container">
+        <div class="fahsai-header">
+          <div class="fahsai-avatar-badge">
+            <div class="fahsai-avatar"><i class="fas fa-user-nurse"></i></div>
+            <div>
+              <div class="fahsai-title">AI ฟ้าใส (Fahsai Nurse AI)</div>
+              <div class="fahsai-status"><span class="fahsai-status-dot"></span> ออนไลน์ · ผู้ช่วยสุขภาพ นพอ. 24 ชม.</div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline" style="color:#fff;border-color:rgba(255,255,255,0.4);" onclick="resetFahsaiChat()" title="เริ่มบทสนทนาใหม่">
+            <i class="fas fa-redo"></i> รีเซ็ต
+          </button>
+        </div>
+
+        <div class="fahsai-chat-body" id="fahsaiChatBody">
+          <!-- ข้อความแชทจะแสดงที่นี่ -->
+        </div>
+
+        <div class="fahsai-quick-chips">
+          <button type="button" class="fahsai-quick-btn" onclick="sendFahsaiQuickMsg('🤒 ประเมินอาการป่วยเบื้องต้น')">
+            🤒 ประเมินอาการป่วย
+          </button>
+          <button type="button" class="fahsai-quick-btn" onclick="sendFahsaiQuickMsg('💊 ตรวจสอบยา / ประวัติแพ้ยา')">
+            💊 เช็คยา/แพ้ยา
+          </button>
+          <button type="button" class="fahsai-quick-btn" onclick="sendFahsaiQuickMsg('🏥 ขออนุญาตไปตรวจรักษา / ทำบัตรอนุญาต')">
+            🏥 ขออนุญาตไปตรวจ
+          </button>
+          <button type="button" class="fahsai-quick-btn" onclick="sendFahsaiQuickMsg('📅 เช็คเวลานัด รพ.ภูมิพลฯ')">
+            📅 เช็คใบนัด รพ.
+          </button>
+          <button type="button" class="fahsai-quick-btn" onclick="sendFahsaiQuickMsg('📋 คำแนะนำดูแลสุขภาพ นพอ.')">
+            📋 แนะนำสุขภาพ
+          </button>
+        </div>
+
+        <form class="fahsai-input-bar" onsubmit="event.preventDefault(); sendFahsaiChatMessage();">
+          <input type="text" id="fahsaiChatInput" class="fahsai-input" placeholder="พิมพ์ถามอาการป่วย, ยา หรือการขออนุญาต..." autocomplete="off">
+          <button type="submit" class="fahsai-send-btn" title="ส่งข้อความ">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </form>
       </div>
     </section>
 
@@ -711,6 +761,34 @@
                 </select>
                 <button class="btn btn-secondary" onclick="clearRecipientFilters()">
                   <i class="fas fa-redo"></i> รีเซ็ตตัวกรอง
+                </button>
+              </div>
+
+              <!-- ชิปคัดกรองด่วน แยกคนเจ็บ แยกประเภท (Instant Triage Filter) -->
+              <div class="quick-filter-chips mb-3" id="recipientQuickChips">
+                <button type="button" class="quick-chip active" data-filter="all" onclick="setQuickRecipientFilter('all')">
+                  <i class="fas fa-users"></i> ทั้งหมด <span class="chip-count" id="chipCountAll">0</span>
+                </button>
+                <button type="button" class="quick-chip chip-sick" data-filter="sick" onclick="setQuickRecipientFilter('sick')">
+                  <i class="fas fa-procedures"></i> ป่วย/รับการตรวจ <span class="chip-count" id="chipCountSick">0</span>
+                </button>
+                <button type="button" class="quick-chip chip-allergy" data-filter="allergy" onclick="setQuickRecipientFilter('allergy')">
+                  <i class="fas fa-allergies"></i> มีประวัติแพ้ยา/อาหาร <span class="chip-count" id="chipCountAllergy">0</span>
+                </button>
+                <button type="button" class="quick-chip chip-chronic" data-filter="chronic" onclick="setQuickRecipientFilter('chronic')">
+                  <i class="fas fa-heartbeat"></i> มีโรคประจำตัว <span class="chip-count" id="chipCountChronic">0</span>
+                </button>
+                <button type="button" class="quick-chip" data-filter="year1" onclick="setQuickRecipientFilter('year1')">
+                  <i class="fas fa-user-graduate"></i> นพอ. ปี 1 (รุ่น 69) <span class="chip-count" id="chipCountY1">0</span>
+                </button>
+                <button type="button" class="quick-chip" data-filter="year2" onclick="setQuickRecipientFilter('year2')">
+                  <i class="fas fa-user-graduate"></i> นพอ. ปี 2 (รุ่น 68) <span class="chip-count" id="chipCountY2">0</span>
+                </button>
+                <button type="button" class="quick-chip" data-filter="year3" onclick="setQuickRecipientFilter('year3')">
+                  <i class="fas fa-user-graduate"></i> นพอ. ปี 3 (รุ่น 67) <span class="chip-count" id="chipCountY3">0</span>
+                </button>
+                <button type="button" class="quick-chip" data-filter="year4" onclick="setQuickRecipientFilter('year4')">
+                  <i class="fas fa-user-graduate"></i> นพอ. ปี 4 (รุ่น 66) <span class="chip-count" id="chipCountY4">0</span>
                 </button>
               </div>
 
@@ -1338,6 +1416,9 @@
           <button type="button" class="profile-tab" data-tab="docs" onclick="showProfileTab('docs')">
             <i class="fas fa-folder-open"></i> เอกสารแนบ <span class="profile-tab-count" id="profTabDocCount">0</span>
           </button>
+          <button type="button" class="profile-tab" data-tab="officialForm" onclick="showProfileTab('officialForm')">
+            <i class="fas fa-file-invoice"></i> แบบฟอร์มประวัติ นพอ. (ทางการ)
+          </button>
         </div>
 
         <div class="profile-tab-pane active" id="profTab-overview">
@@ -1474,12 +1555,181 @@
           </div>
         </div>
 
+        <!-- แบบฟอร์มบันทึกประวัติส่วนตัว นพอ. (ทางการ) ตามแบบ วพอ. กรมแพทย์ทหารอากาศ -->
+        <div class="profile-tab-pane" id="profTab-officialForm">
+          <div class="d-flex justify-content-between align-items-center mb-3 no-print" style="flex-wrap:wrap;gap:8px;">
+            <div>
+              <h5 class="section-title mb-1"><i class="fas fa-file-invoice text-primary"></i> แบบฟอร์มบันทึกประวัติส่วนตัว นพอ. (เอกสารทางการ)</h5>
+              <p class="text-muted" style="font-size:0.85rem;margin:0;">จำลองแบบฟอร์มเวชระเบียนทางการ วิทยาลัยพยาบาลทหารอากาศ กรมแพทย์ทหารอากาศ พร้อมจัดพิมพ์ A4</p>
+            </div>
+            <div>
+              <button type="button" class="btn btn-primary" onclick="printOfficialRecordSheet()">
+                <i class="fas fa-print"></i> พิมพ์แบบฟอร์มทางการ (A4)
+              </button>
+            </div>
+          </div>
+
+          <div id="officialFormPrintArea" class="official-record-sheet">
+            <!-- Header -->
+            <div class="official-form-header">
+              <div class="official-form-header-left">
+                <div><span class="official-field"><label>รหัสประจำตัวประชาชน :</label> <span class="val" id="ofNationalId">-</span></span></div>
+                <div><span class="official-field"><label>สิทธิการรักษา :</label> <span class="val" id="ofTreatmentRight">ข้าราชการ / เบิกตรง / บัตรทอง</span></span></div>
+                <div><span class="official-field"><label>เลข HN รพ.ภูมิพล ฯ :</label> <span class="val" id="ofHnNumber">-</span></span></div>
+              </div>
+              <div class="official-form-header-center">
+                <img class="official-form-crest rtafnc-logo-img" alt="ตราสัญลักษณ์ วพอ.">
+                <div class="official-form-title-wrap">
+                  <div class="official-form-title">แบบฟอร์มบันทึกประวัติส่วนตัว นพอ.</div>
+                </div>
+              </div>
+              <div class="official-form-header-right">
+                <div><span class="official-field"><label>รหัสประจำตัว นพอ. :</label> <span class="val" id="ofStudentId" style="font-weight:700;">-</span></span></div>
+                <div class="official-photo-frame">
+                  <img id="ofPhotoImg" src="" alt="รูป นพอ." style="display:none;">
+                  <div id="ofPhotoPlaceholder" style="font-size:0.75rem;color:#64748b;text-align:center;padding:8px;">รูปถ่าย 1.5 x 2 นิ้ว</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ส่วนที่ 1: ข้อมูลส่วนตัว -->
+            <div class="official-form-section">
+              <div class="official-form-section-title">ส่วนที่ 1 : ข้อมูลส่วนตัว</div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>ชื่อ-สกุล :</label> <span class="val" id="ofFullName" style="font-weight:700;">-</span></span>
+                <span class="official-field" style="flex:1;"><label>เพศ :</label> <span class="val" id="ofGender">-</span></span>
+                <span class="official-field" style="flex:1;"><label>อายุ :</label> <span class="val" id="ofAge">-</span> ปี</span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>Name – Lastname :</label> <span class="val" id="ofNameEn">-</span></span>
+                <span class="official-field" style="flex:1;"><label>Blood Group :</label> <span class="val" id="ofBloodGroup" style="font-weight:700;">-</span></span>
+                <span class="official-field" style="flex:1;"><label>Rh :</label> <span class="val" id="ofRh">+</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>เกิดวันที่ :</label> <span class="val" id="ofBirthDate">-</span></span>
+                <span class="official-field" style="flex:1;"><label>เชื้อชาติ :</label> <span class="val" id="ofRace">ไทย</span></span>
+                <span class="official-field" style="flex:1;"><label>สัญชาติ :</label> <span class="val" id="ofNationality">ไทย</span></span>
+                <span class="official-field" style="flex:1;"><label>ศาสนา :</label> <span class="val" id="ofReligion">พุทธ</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1.5;"><label>อาชีพ :</label> <span class="val" id="ofCareer">นักเรียนพยาบาลทหารอากาศ</span></span>
+                <span class="official-field" style="flex:2;"><label>สังกัด :</label> <span class="val" id="ofAffiliation">วิทยาลัยพยาบาลทหารอากาศ พอ.</span></span>
+                <span class="official-field" style="flex:1.5;"><label>ตำแหน่ง :</label> <span class="val" id="ofPosition">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field"><label>น้ำหนัก :</label> <span class="val" id="ofWeight">-</span> กิโลกรัม</span>
+                <span class="official-field"><label>ส่วนสูง :</label> <span class="val" id="ofHeight">-</span> เซนติเมตร</span>
+                <span class="official-field" style="flex:1.5;"><label>ค่า BMI ณ ขณะนั้น :</label> <span class="val" id="ofBmi" style="font-weight:700;">-</span> กิโลกรัมต่อตารางเมตร</span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ที่อยู่ :</label> <span class="val" id="ofAddress">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ถนน :</label> <span class="val" id="ofStreet">-</span></span>
+                <span class="official-field" style="flex:1;"><label>แขวง/ตำบล :</label> <span class="val" id="ofSubdistrict">-</span></span>
+                <span class="official-field" style="flex:1;"><label>เขต/อำเภอ :</label> <span class="val" id="ofDistrict">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1.5;"><label>จังหวัด :</label> <span class="val" id="ofProvince">กรุงเทพมหานคร</span></span>
+                <span class="official-field" style="flex:1;"><label>รหัสไปรษณีย์ :</label> <span class="val" id="ofZipCode">-</span></span>
+                <span class="official-field" style="flex:1.5;"><label>เบอร์โทรติดต่อ :</label> <span class="val" id="ofPhone">-</span></span>
+              </div>
+            </div>
+
+            <!-- ส่วนที่ 2: ข้อมูลผู้ปกครอง -->
+            <div class="official-form-section">
+              <div class="official-form-section-title">ส่วนที่ 2 : ข้อมูลผู้ปกครอง</div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>ชื่อ - สกุล บิดา :</label> <span class="val" id="ofFatherName">-</span></span>
+                <span class="official-field" style="flex:1.5;"><label>เบอร์โทรติดต่อ :</label> <span class="val" id="ofFatherPhone">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>ชื่อ - สกุล มารดา :</label> <span class="val" id="ofMotherName">-</span></span>
+                <span class="official-field" style="flex:1.5;"><label>เบอร์โทรติดต่อ :</label> <span class="val" id="ofMotherPhone">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2.5;"><label>ชื่อ – สกุล ผู้ปกครองที่สามารถติดต่อได้ในกรณีฉุกเฉิน :</label> <span class="val" id="ofEmergencyContactName" style="font-weight:600;">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:2;"><label>ความสัมพันธ์ของผู้ปกครอง :</label> <span class="val" id="ofEmergencyRelation">-</span></span>
+                <span class="official-field" style="flex:1.5;"><label>เบอร์โทรติดต่อ :</label> <span class="val" id="ofEmergencyPhone" style="font-weight:600;">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ที่อยู่ที่ติดต่อได้ของผู้ปกครอง :</label> <span class="val" id="ofContactAddress">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ถนน :</label> <span class="val" id="ofContactStreet">-</span></span>
+                <span class="official-field" style="flex:1;"><label>แขวง/ตำบล :</label> <span class="val" id="ofContactSubdistrict">-</span></span>
+                <span class="official-field" style="flex:1;"><label>เขต/อำเภอ :</label> <span class="val" id="ofContactDistrict">-</span></span>
+                <span class="official-field" style="flex:1;"><label>จังหวัด :</label> <span class="val" id="ofContactProvince">-</span></span>
+                <span class="official-field" style="flex:1;"><label>รหัสไปรษณีย์ :</label> <span class="val" id="ofContactZipCode">-</span></span>
+              </div>
+            </div>
+
+            <!-- ส่วนที่ 3: ประวัติการเจ็บป่วย -->
+            <div class="official-form-section">
+              <div class="official-form-section-title">ส่วนที่ 3 : ประวัติการเจ็บป่วย</div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ประวัติการแพ้ยา/แพ้อาหาร/การแพ้อื่นๆ :</label> <span class="val text-danger" id="ofAllergies" style="font-weight:700;">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>ประวัติการผ่าตัด :</label> <span class="val" id="ofSurgeries">-</span></span>
+              </div>
+              <div class="official-form-row">
+                <span class="official-field" style="flex:1;"><label>โรคประจำตัว :</label> <span class="val text-danger" id="ofCongenital" style="font-weight:700;">-</span></span>
+              </div>
+              <div style="font-size:0.85rem;margin-top:6px;line-height:1.8;">
+                <label style="font-weight:600;color:#082444;">ประวัติการเจ็บป่วยภายในครอบครัว :</label>
+                <div style="padding-left:18px;">
+                  <div>• บิดา : <span class="val" id="ofFamFather">-</span></div>
+                  <div>• มารดา : <span class="val" id="ofFamMother">-</span></div>
+                  <div>• พี่/น้อง : <span class="val" id="ofFamSiblings">-</span></div>
+                  <div>• ปู่/ย่า : <span class="val" id="ofFamGrandparents1">-</span></div>
+                  <div>• ตา/ยาย : <span class="val" id="ofFamGrandparents2">-</span></div>
+                  <div>• อื่นๆ : <span class="val" id="ofFamOthers">-</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ข้อความรับรองตามระเบียบ วพอ. -->
+            <div class="official-footer-cert">
+              ข้าพเจ้ารับรองว่า ข้อมูลทั้งหมดนี้ถูกต้องครบถ้วนทุกประการ และยินยอมให้ตรวจสอบข้อมูลทางระเบียบใด ๆ ทางกฎหมาย รวมถึงอนุญาตให้ใช้รูปและข้อมูลของข้าพเจ้า เพื่อการมีเวชระเบียนและการตรวจรักษาของวิทยาลัยพยาบาลทหารอากาศ หากมีข้อมูลใด ๆ ไม่ถูกต้อง หรือไม่ตรงตามความเป็นจริงและอาจทำให้เกิดความเสียหายแก่ข้าพเจ้าหรือบุคคลอื่น ข้าพเจ้ายินยอมรับผิดชอบ ในความเสียหายนั้นทุกประการ
+            </div>
+
+            <!-- ลายเซ็น -->
+            <div class="official-signatures">
+              <div style="display:inline-block;text-align:center;">
+                <div>ลงชื่อ ............................................................</div>
+                <div style="margin-top:4px;">( <span id="ofSignName">............................................................</span> )</div>
+                <div style="margin-top:4px;">บันทึกข้อมูลเมื่อ : <span id="ofRecordDate">-</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
       <div class="modal-footer" style="flex-wrap:wrap;gap:8px;">
-        <button class="btn btn-primary" onclick="downloadProfilePdf()"><i class="fas fa-file-pdf"></i> ดาวน์โหลด PDF แฟ้มประวัติ</button>
+        <button class="btn btn-primary" onclick="printOfficialRecordSheet()"><i class="fas fa-print"></i> พิมพ์แบบฟอร์มทางการ (A4)</button>
+        <button class="btn btn-outline" onclick="downloadProfilePdf()"><i class="fas fa-file-pdf"></i> ดาวน์โหลด PDF แฟ้มประวัติ</button>
         <button class="btn btn-outline" onclick="downloadConsentPdf()"><i class="fas fa-file-signature"></i> หนังสือยินยอม PDF</button>
-        <button class="btn btn-outline" onclick="printProfileFile()"><i class="fas fa-print"></i> พิมพ์แฟ้มประวัติ</button>
         <button class="btn btn-secondary" onclick="closeModal('profileModal')">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal เอกสารตรวจรักษาทางการ นพอ. (ใบขออนุญาตตรวจรักษา / ใบบันทึกตรวจรักษา) -->
+  <div id="officialVisitDocModal" class="modal-overlay">
+    <div class="modal-box medium">
+      <div class="modal-header">
+        <h4 id="officialVisitDocTitle">เอกสารทางการ นพอ.</h4>
+        <button class="modal-close-btn" onclick="closeModal('officialVisitDocModal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body" id="officialVisitDocBody">
+        <!-- ไดนามิกสร้างตามประเภท: ใบขออนุญาตตรวจรักษา หรือ ใบบันทึกตรวจรักษา -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="printOfficialVisitDoc()"><i class="fas fa-print"></i> พิมพ์เอกสาร (A4)</button>
+        <button class="btn btn-secondary" onclick="closeModal('officialVisitDocModal')">ปิดหน้าต่าง</button>
       </div>
     </div>
   </div>

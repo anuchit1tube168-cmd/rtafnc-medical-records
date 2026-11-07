@@ -2545,6 +2545,452 @@ body {
 .liff-doc-meta { font-size: 0.66rem; color: #94a3b8; }
 .liff-doc-link { margin-left: auto; color: #0f7a56; font-size: 0.9rem; }
 
+/* Quick Category Filter Chips (แยกคนเจ็บ แยกประเภท) */
+.quick-filter-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.quick-chip:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+.quick-chip.active {
+  background: #082444;
+  border-color: #082444;
+  color: #ffffff;
+  box-shadow: 0 4px 10px -2px rgba(8, 36, 68, 0.35);
+}
+.quick-chip.active .chip-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+.quick-chip .chip-count {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.quick-chip.chip-sick.active {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+.quick-chip.chip-allergy.active {
+  background: #ea580c;
+  border-color: #ea580c;
+}
+.quick-chip.chip-chronic.active {
+  background: #0284c7;
+  border-color: #0284c7;
+}
+
+/* Official RTAFNC Medical Personal Record Form (แบบฟอร์มบันทึกประวัติส่วนตัว นพอ.) */
+.official-record-sheet {
+  background: #ffffff;
+  color: #082444;
+  border: 2px solid #082444;
+  border-radius: 6px;
+  padding: 24px 28px;
+  font-family: 'Sarabun', 'Bai Jamjuree', sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+}
+.official-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.official-form-header-left {
+  flex: 1;
+  font-size: 0.85rem;
+  line-height: 1.9;
+}
+.official-form-header-center {
+  padding: 0 16px;
+  text-align: center;
+}
+.official-form-crest {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.12));
+}
+.official-form-header-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.official-photo-frame {
+  width: 90px;
+  height: 110px;
+  border: 1.5px solid #082444;
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.official-photo-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.official-form-title-wrap {
+  text-align: center;
+  margin: 10px 0 16px 0;
+}
+.official-form-title {
+  font-family: 'Kanit', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #082444;
+  border-bottom: 2px solid #082444;
+  padding-bottom: 4px;
+  display: inline-block;
+}
+.official-form-section {
+  border: 1.5px solid #082444;
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.official-form-section-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #082444;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px dotted #082444;
+}
+.official-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  margin-bottom: 4px;
+}
+.official-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.official-field label {
+  font-weight: 600;
+  color: #082444;
+  white-space: nowrap;
+}
+.official-field .val {
+  border-bottom: 1px dotted #082444;
+  padding: 0 4px;
+  color: #1e293b;
+  min-width: 60px;
+}
+.official-footer-cert {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #334155;
+  margin: 14px 0 10px;
+  text-align: justify;
+}
+.official-signatures {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  text-align: center;
+}
+
+/* AI ฟ้าใส (Fahsai Health Assistant) */
+.fahsai-container {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 520px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+.fahsai-header {
+  background: linear-gradient(135deg, #0369a1, #082444);
+  color: #ffffff;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fahsai-avatar-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fahsai-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0284c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  border: 2px solid #38bdf8;
+}
+.fahsai-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.fahsai-status {
+  font-size: 0.72rem;
+  color: #bae6fd;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.fahsai-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  display: inline-block;
+}
+.fahsai-chat-body {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+}
+.fahsai-msg {
+  display: flex;
+  gap: 8px;
+  max-width: 88%;
+}
+.fahsai-msg.ai {
+  align-self: flex-start;
+}
+.fahsai-msg.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.fahsai-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+.fahsai-msg.ai .fahsai-bubble {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-top-left-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+.fahsai-msg.user .fahsai-bubble {
+  background: #0284c7;
+  color: #ffffff;
+  border-top-right-radius: 2px;
+}
+.fahsai-quick-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+}
+.fahsai-quick-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #0369a1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.fahsai-quick-btn:hover {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+}
+.fahsai-input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+}
+.fahsai-input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  outline: none;
+}
+.fahsai-input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+.fahsai-send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+.fahsai-send-btn:hover {
+  background: #0369a1;
+}
+
+/* Official Visit & Request Cards (Image 1 & 2) */
+.official-doc-card {
+  background: #ffffff;
+  border: 2.5px solid #082444;
+  border-radius: 4px;
+  padding: 18px 24px;
+  font-family: 'Sarabun', 'Bai Jamjuree', sans-serif;
+  color: #082444;
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+.official-doc-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+.official-doc-topbar .crest-wrap {
+  text-align: center;
+  flex: 1;
+}
+.official-doc-topbar .crest {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+.official-doc-title-wrap {
+  text-align: center;
+  margin-bottom: 12px;
+}
+.official-doc-title {
+  font-family: 'Kanit', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #082444;
+  border-bottom: 2px solid #082444;
+  padding-bottom: 2px;
+  display: inline-block;
+}
+.official-doc-frame {
+  border: 2px solid #082444;
+  border-radius: 3px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+.official-doc-frame-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #082444;
+  margin-bottom: 8px;
+  border-bottom: 1px dotted #082444;
+  padding-bottom: 3px;
+}
+.official-doc-line {
+  font-size: 0.88rem;
+  line-height: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.official-doc-line .val {
+  border-bottom: 1px dotted #082444;
+  padding: 0 6px;
+  color: #1e293b;
+}
+.official-doc-timestamp {
+  text-align: right;
+  font-size: 0.78rem;
+  color: #475569;
+  margin-top: 10px;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #officialFormPrintArea, #officialFormPrintArea *,
+  #officialVisitDocPrintArea, #officialVisitDocPrintArea * {
+    visibility: visible !important;
+  }
+  #officialFormPrintArea, #officialVisitDocPrintArea {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .modal-overlay {
+    position: static !important;
+    background: transparent !important;
+  }
+  .modal-box {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .modal-header, .profile-tabs, .modal-footer, .no-print {
+    display: none !important;
+  }
+}
+
 @media (max-width: 420px) {
   .liff-hero-title { font-size: 1.24rem; }
   .liff-own-actions { grid-template-columns: 1fr; }

@@ -23,6 +23,35 @@ async function sendTelegram(env, text) {
   return await res.json();
 }
 
+async function sendLine(env, text) {
+  const token = env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
+  const target = env.LINE_TARGET_ID || env.LINE_STAFF_USER_ID;
+  if (!token || !target) {
+    return { ok: false, error: 'LINE messaging token or target ID not configured' };
+  }
+  try {
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        to: target,
+        messages: [{ type: 'text', text: text }]
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, result: data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+function stripHtml(html) {
+  return String(html || '').replace(/<[^>]+>/g, '');
+}
+
 function formatReferralAlert(data) {
   const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
   const hospital = data.destinationHospital || data.hospital || 'รพ.ภูมิพลอดุลยเดช พอ.';
@@ -107,27 +136,51 @@ export async function handleRequest(request, env) {
     return json({ ok: tgRes.ok, result: tgRes });
   }
 
-  // Hospital referral Telegram alert
+  // LINE test notification / status check
+  if (url.pathname === '/api/line/test' || url.pathname === '/api/testLine') {
+    const token = env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
+    const target = env.LINE_TARGET_ID || env.LINE_STAFF_USER_ID;
+    if (!token || !target) {
+      return json({
+        ok: false,
+        status: 'LINE_MESSAGING_NOT_CONFIGURED',
+        message: 'ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN หรือ LINE_TARGET_ID (ใช้ LIFF ได้ตามปกติ)',
+        liff: {
+          configured: true,
+          liffId: env.LINE_LIFF_ID || '2010948179-Ympqt2bT',
+          liffUrl: `https://liff.line.me/${env.LINE_LIFF_ID || '2010948179-Ympqt2bT'}`
+        }
+      });
+    }
+    const nowStr = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const text = `🔔 [แจ้งเตือนระบบเวชระเบียน วพอ.]\nทดสอบการเชื่อมต่อ LINE Messaging API สำเร็จ เวลา ${nowStr} น.`;
+    const lineRes = await sendLine(env, text);
+    return json({ ok: lineRes.ok, result: lineRes });
+  }
+
+  // Hospital referral alert (Telegram + LINE)
   if (url.pathname === '/api/telegram/referral' || url.pathname === '/api/referral') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     try {
       const data = await request.json();
       const text = formatReferralAlert(data);
       const tgRes = await sendTelegram(env, text);
-      return json({ ok: tgRes.ok, result: tgRes });
+      const lineRes = await sendLine(env, stripHtml(text));
+      return json({ ok: tgRes.ok || lineRes.ok, result: tgRes, line: lineRes });
     } catch (err) {
       return json({ ok: false, error: err.message }, 400);
     }
   }
 
-  // Pre-Triage student self-checkin Telegram alert
+  // Pre-Triage student self-checkin alert (Telegram + LINE)
   if (url.pathname === '/api/telegram/triage' || url.pathname === '/api/pre-triage') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
     try {
       const data = await request.json();
       const text = formatTriageAlert(data);
       const tgRes = await sendTelegram(env, text);
-      return json({ ok: tgRes.ok, result: tgRes });
+      const lineRes = await sendLine(env, stripHtml(text));
+      return json({ ok: tgRes.ok || lineRes.ok, result: tgRes, line: lineRes });
     } catch (err) {
       return json({ ok: false, error: err.message }, 400);
     }

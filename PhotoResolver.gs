@@ -136,6 +136,45 @@ function findPhotoMatchesByStudentCode_(studentCode) {
   }
 
   let status = 'OK';
+  if (matches.length === 0) {
+    // 3. Smart Cross-Cohort Fallback: หากไม่พบในโฟลเดอร์ชั้นปีหลัก ให้ตรวจหาในโฟลเดอร์ชั้นปีอื่น
+    // รองรับกรณีรหัส นพอ. ในทะเบียนพิมพ์นำหน้าชั้นปีคลาดเคลื่อน (เช่น 69 แทนที่จะเป็น 68) โดยเทียบเลขรหัส 5 ตัวท้าย
+    const otherPrefixes = Object.keys(OFFICIAL_FOLDERS).filter(function(p) { return p !== prefix; });
+    const suffix5 = code.length >= 5 ? code.slice(-5) : code;
+
+    for (let j = 0; j < otherPrefixes.length; j++) {
+      const oPrefix = otherPrefixes[j];
+      const oFolderId = OFFICIAL_FOLDERS[oPrefix];
+      if (!oFolderId) continue;
+
+      try {
+        const oFolder = DriveApp.getFolderById(oFolderId);
+        const oFiles = oFolder.getFiles();
+        while (oFiles.hasNext()) {
+          const file = oFiles.next();
+          const name = String(file.getName() || '').trim();
+          const mimeType = file.getMimeType();
+          if ((name.indexOf(code) === 0 || (suffix5.length === 5 && name.indexOf(oPrefix + suffix5) === 0)) && isImageMime_(mimeType)) {
+            matches.push({
+              fileId: file.getId(),
+              name: name,
+              mimeType: mimeType,
+              size: Number(file.getSize() || 0),
+              folderId: oFolderId,
+              classYear: cfg.classYearByPrefix[oPrefix] || null,
+              prefix: oPrefix,
+              webCompatible: isWebCompatibleImage_(mimeType)
+            });
+            break;
+          }
+        }
+        if (matches.length > 0) break;
+      } catch (e) {
+        Logger.log('Cross-cohort search note: ' + e.message);
+      }
+    }
+  }
+
   if (matches.length === 0) status = 'PHOTO_MISSING';
   if (matches.length > 1) status = 'PHOTO_REVIEW_REQUIRED';
 

@@ -125,7 +125,7 @@ export async function handleRequest(request, env) {
 
   // LIFF Config endpoint
   if (url.pathname === '/api/liff-config') {
-    return json({ ok: true, liffId: env.LINE_LIFF_ID || '2010948179-Ympqt2bT' });
+    return json({ ok: true, liffId: env.LINE_LIFF_ID || '2012450964-nLKUtgQn' });
   }
 
   // Telegram test notification
@@ -147,8 +147,8 @@ export async function handleRequest(request, env) {
         message: 'ยังไม่ได้ตั้งค่า LINE_MESSAGING_CHANNEL_ACCESS_TOKEN หรือ LINE_TARGET_ID (ใช้ LIFF ได้ตามปกติ)',
         liff: {
           configured: true,
-          liffId: env.LINE_LIFF_ID || '2010948179-Ympqt2bT',
-          liffUrl: `https://liff.line.me/${env.LINE_LIFF_ID || '2010948179-Ympqt2bT'}`
+          liffId: env.LINE_LIFF_ID || '2012450964-nLKUtgQn',
+          liffUrl: `https://liff.line.me/${env.LINE_LIFF_ID || '2012450964-nLKUtgQn'}`
         }
       });
     }

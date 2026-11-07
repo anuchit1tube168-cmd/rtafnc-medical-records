@@ -98,7 +98,7 @@ test('generated bundle drops legacy admin password bypass and sample seeding', (
 
 test('Workers exposes health, LIFF config, and validates notification endpoints', async () => {
   const env = {
-    LINE_LIFF_ID: '2010948179-Ympqt2bT',
+    LINE_LIFF_ID: '2012450964-nLKUtgQn',
     TELEGRAM_BOT_TOKEN: 'test-token',
     TELEGRAM_CHAT_ID: 'test-chat'
   };
@@ -110,7 +110,7 @@ test('Workers exposes health, LIFF config, and validates notification endpoints'
   const liffRes = await handleRequest(new Request('https://health.example/api/liff-config'), env);
   assert.equal(liffRes.status, 200);
   const liffData = await liffRes.json();
-  assert.equal(liffData.liffId, '2010948179-Ympqt2bT');
+  assert.equal(liffData.liffId, '2012450964-nLKUtgQn');
 
   const refBadMethod = await handleRequest(new Request('https://health.example/api/telegram/referral'), env);
   assert.equal(refBadMethod.status, 405);

@@ -1215,7 +1215,7 @@ function initializeDefaultSettings(ss) {
     ["SHOW_LOGO", "FALSE", "แสดงโลโก้บนหัวเอกสาร (TRUE/FALSE)"],
     ["PRINT_HEADER_TEXT", "บันทึกการเข้ารับบริการและส่งตัวสุขภาพ", "ข้อความส่วนหัวเอกสารรายงาน"],
     ["PRINT_FOOTER_TEXT", "เอกสารนี้สร้างขึ้นโดยระบบเวชระเบียนอัตโนมัติประจำหน่วยงาน", "ข้อความท้ายเอกสารรายงาน"],
-    ["LINE_LIFF_ID", "", "LINE LIFF ID สำหรับเปิดใช้งานระบบผ่านแอป LINE (เช่น 200xxxxxxx-xxxxxxx)"],
+    ["LINE_LIFF_ID", "2012450964-nLKUtgQn", "LINE LIFF ID สำหรับเปิดใช้งานระบบผ่านแอป LINE"],
     ["STUDENT_ID_LENGTH", "7", "จำนวนหลักของรหัสประจำตัวนักเรียนพยาบาล (7 หลัก)"],
     ["TELEGRAM_BOT_TOKEN", "", "โทเค็น Telegram Bot สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],
     ["TELEGRAM_CHAT_ID", "", "ไอดีห้องแชท Telegram สำหรับส่งการแจ้งเตือน (เก็บหลังบ้าน)"],

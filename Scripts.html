@@ -130,7 +130,7 @@ function initApp() {
 
   // บันทึกฟอร์ม Login
   document.getElementById('loginForm').addEventListener('submit', handleLogin);
-  document.getElementById('demoLoginBtn').addEventListener('click', handleDemoLogin);
+  document.getElementById('demoLoginBtn')?.addEventListener('click', handleDemoLogin);
   
   // ซิงก์ตราสัญลักษณ์วิทยาลัยพยาบาลทหารอากาศ
   syncCollegeLogos();
@@ -192,14 +192,13 @@ function checkDemoAvailability() {
   google.script.run
     .withSuccessHandler(function(enabled) {
       const demoBtn = document.getElementById('demoLoginBtn');
-      if (enabled) {
-        demoBtn.style.display = 'inline-flex';
-      } else {
-        demoBtn.style.display = 'none';
+      if (demoBtn) {
+        demoBtn.style.display = enabled ? 'inline-flex' : 'none';
       }
     })
     .withFailureHandler(function() {
-      document.getElementById('demoLoginBtn').style.display = 'none';
+      const demoBtn = document.getElementById('demoLoginBtn');
+      if (demoBtn) demoBtn.style.display = 'none';
     })
     .isDemoEnabled();
 }
